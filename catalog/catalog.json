@@ -9,12 +9,12 @@
       "variant": "默认立绘",
       "status": "needs_review",
       "selection": "automatic",
-      "image_path": null,
-      "sha256": null,
-      "mime_type": null,
+      "image_path": "images/原神/温迪.jpg",
+      "sha256": "dc57091eb56026d75a163804c42d43dbaa2c5a2a92cfd74b833961bdd4903e27",
+      "mime_type": "image/jpeg",
       "source_page": "https://wiki.biligame.com/ys/%E6%B8%A9%E8%BF%AA",
       "source_image": "https://raw.githubusercontent.com/gszshdzz/GenshinAvatarCards/268a87e40bb5ee24e72396cd3d3ed08b87b177b5/C%E7%AB%8B%E7%BB%98/VENTI-%E6%B8%A9%E8%BF%AA.jpg",
-      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 公共仓库仅记录来源，未转载图片文件。"
+      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 已上传为测试候选；仍需按人物清晰度规则复核，并核对酒馆实际名单。"
     },
     {
       "id": "genshin-zhongli-default",
@@ -24,12 +24,12 @@
       "variant": "默认立绘",
       "status": "needs_review",
       "selection": "automatic",
-      "image_path": null,
-      "sha256": null,
-      "mime_type": null,
+      "image_path": "images/原神/钟离.jpg",
+      "sha256": "32f5f064ace8a8ce996ecdaf58770ac748df477d8498148ef2cfbc6d55580c32",
+      "mime_type": "image/jpeg",
       "source_page": "https://wiki.biligame.com/ys/%E9%92%9F%E7%A6%BB",
       "source_image": "https://raw.githubusercontent.com/gszshdzz/GenshinAvatarCards/268a87e40bb5ee24e72396cd3d3ed08b87b177b5/C%E7%AB%8B%E7%BB%98/ZHONGLI-%E9%92%9F%E7%A6%BB.jpg",
-      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 公共仓库仅记录来源，未转载图片文件。"
+      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 已上传为测试候选；仍需按人物清晰度规则复核，并核对酒馆实际名单。"
     },
     {
       "id": "genshin-raiden-default",
@@ -39,12 +39,12 @@
       "variant": "默认立绘",
       "status": "needs_review",
       "selection": "automatic",
-      "image_path": null,
-      "sha256": null,
-      "mime_type": null,
+      "image_path": "images/原神/雷电将军.jpg",
+      "sha256": "e8bf14fd1ffdfa5ea99bb6c846b872a0dacfb6ccb1cd42b68e50924463f4f6ef",
+      "mime_type": "image/jpeg",
       "source_page": "https://wiki.biligame.com/ys/%E9%9B%B7%E7%94%B5%E5%B0%86%E5%86%9B",
       "source_image": "https://raw.githubusercontent.com/gszshdzz/GenshinAvatarCards/268a87e40bb5ee24e72396cd3d3ed08b87b177b5/C%E7%AB%8B%E7%BB%98/RAIDEN_SHOGUN-%E9%9B%B7%E7%94%B5%E5%B0%86%E5%86%9B.jpg",
-      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 公共仓库仅记录来源，未转载图片文件。"
+      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 已上传为测试候选；仍需按人物清晰度规则复核，并核对酒馆实际名单。"
     },
     {
       "id": "genshin-nahida-default",
@@ -54,12 +54,12 @@
       "variant": "默认立绘",
       "status": "needs_review",
       "selection": "automatic",
-      "image_path": null,
-      "sha256": null,
-      "mime_type": null,
+      "image_path": "images/原神/纳西妲.jpg",
+      "sha256": "43df002725654e392e3ba69482cc2ee1dd94827143696252c1a7bff3c7c78f75",
+      "mime_type": "image/jpeg",
       "source_page": "https://wiki.biligame.com/ys/%E7%BA%B3%E8%A5%BF%E5%A6%B2",
       "source_image": "https://patchwiki.biligame.com/images/ys/3/30/7vf3x2md1skhpijpfyznxczi8ohlp71.png",
-      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 公共仓库仅记录来源，未转载图片文件。"
+      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 已上传为测试候选；仍需按人物清晰度规则复核，并核对酒馆实际名单。"
     },
     {
       "id": "genshin-mavuika-default",
@@ -69,12 +69,12 @@
       "variant": "默认立绘",
       "status": "needs_review",
       "selection": "automatic",
-      "image_path": null,
-      "sha256": null,
-      "mime_type": null,
+      "image_path": "images/原神/玛薇卡.webp",
+      "sha256": "c8c8b5d4fe9418d7510addad780ba1f4c52279ef1972de793d8e44767ac5fdfe",
+      "mime_type": "image/webp",
       "source_page": "https://wiki.biligame.com/ys/%E7%8E%9B%E8%96%87%E5%8D%A1",
       "source_image": "https://patchwiki.biligame.com/images/ys/3/3f/eewrw1grsbnl3uvt0vsbi8d8pkewjl9.png",
-      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 原 PNG 转为 750×1899 的 WebP，质量 99，有损压缩。 公共仓库仅记录来源，未转载图片文件。"
+      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 原 PNG 转为 750×1899 的 WebP，质量 99，有损压缩。 已上传为测试候选；仍需按人物清晰度规则复核，并核对酒馆实际名单。"
     },
     {
       "id": "genshin-anastasya-default",
@@ -84,12 +84,12 @@
       "variant": "默认立绘",
       "status": "needs_review",
       "selection": "automatic",
-      "image_path": null,
-      "sha256": null,
-      "mime_type": null,
+      "image_path": "images/原神/安娜丝塔夏.webp",
+      "sha256": "c6438ee794891a398ba4447ea3294d75b0af455aec45e37bc91f63da7c4efe42",
+      "mime_type": "image/webp",
       "source_page": "https://wiki.biligame.com/ys/%E5%AE%89%E5%A8%9C%E4%B8%9D%E5%A1%94%E5%A4%8F",
       "source_image": "https://patchwiki.biligame.com/images/ys/5/5d/hgk10o09s1yaph94qy3vgk0bap7afav.png",
-      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 原 PNG 转为 750×1900 的无损 WebP；为官方角色介绍图，非已实装抽卡图。 公共仓库仅记录来源，未转载图片文件。"
+      "note": "官方角色介绍竖版图；部分文字或动作遮挡服饰。公开再发布许可未核实。 原 PNG 转为 750×1900 的无损 WebP；为官方角色介绍图，非已实装抽卡图。 已上传为测试候选；仍需按人物清晰度规则复核，并核对酒馆实际名单。"
     },
     {
       "id": "genshin-furina-default",
@@ -99,12 +99,12 @@
       "variant": "默认立绘",
       "status": "needs_review",
       "selection": "automatic",
-      "image_path": null,
-      "sha256": null,
-      "mime_type": null,
+      "image_path": "images/原神/芙宁娜.webp",
+      "sha256": "7c7110f560d71e26334fb0067efac2885ce61aed795951a8d59630de52dff62f",
+      "mime_type": "image/webp",
       "source_page": "https://wiki.biligame.com/ys/%E8%8A%99%E5%AE%81%E5%A8%9C",
       "source_image": "https://patchwiki.biligame.com/images/ys/3/36/596ms0f8jjyjb20gxg4nybjz2yc7y0y.png",
-      "note": "官方角色介绍竖版图，PNG 转为 750×1899 WebP，质量 99，有损压缩；公开转载许可未核实。 公共仓库仅记录来源，未转载图片文件。"
+      "note": "官方角色介绍竖版图，PNG 转为 750×1899 WebP，质量 99，有损压缩；公开转载许可未核实。 已上传为测试候选；仍需按人物清晰度规则复核，并核对酒馆实际名单。"
     },
     {
       "id": "genshin-focalors-default",
@@ -114,12 +114,12 @@
       "variant": "剧情形象截图（候选）",
       "status": "needs_review",
       "selection": "unconfirmed",
-      "image_path": null,
-      "sha256": null,
-      "mime_type": null,
+      "image_path": "images/原神/芙卡洛斯.webp",
+      "sha256": "57b4688a34ad03dc91d92f65a3873c5151bb050d2cac3d94cfd084d8eb615c3d",
+      "mime_type": "image/webp",
       "source_page": "https://genshin-impact.fandom.com/wiki/Focalors",
       "source_image": "https://static.wikia.nocookie.net/gensin-impact/images/e/e9/NPC_Focalors.png/revision/latest?cb=20240406074127",
-      "note": "游戏剧情全身形象截图；尚未找到可核实的独立官方初始立绘，不以此冒充。公开转载许可未核实。 公共仓库仅记录来源，未转载图片文件。"
+      "note": "游戏剧情全身形象截图；尚未找到可核实的独立官方初始立绘，不以此冒充。公开转载许可未核实。 已上传为测试候选；仍需按人物清晰度规则复核，并核对酒馆实际名单。"
     }
   ]
 }
