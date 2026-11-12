@@ -25,6 +25,10 @@ MIME_EXTENSIONS = {
 
 CHECK_RE = re.compile(r"^-\s+\[(?P<check>[ xX])\]\s+(?P<rest>.+)$")
 LINK_RE = re.compile(r"^\[(?P<text>[^\]]+)\]\((?P<path>[^)]+)\)")
+ALIAS_RE = re.compile(r"别名[:：]\s*(.+)$")
+ALIAS_SPLIT = re.compile(r"[、,，/／]+")
+SEPARATORS = re.compile(r"[\s·・‧•∙⋅\-–—/／]+")
+BRACKETS = re.compile(r"[\[\]【】()（）『』「」<>《》]+")
 
 
 def repo_root() -> Path:
@@ -51,6 +55,74 @@ def extension_mime(path: Path) -> str | None:
     return None
 
 
+def to_halfwidth(text: str) -> str:
+    chars = []
+    for char in text:
+        code = ord(char)
+        if code == 0x3000:
+            chars.append(" ")
+        elif 0xFF01 <= code <= 0xFF5E:
+            chars.append(chr(code - 0xFEE0))
+        else:
+            chars.append(char)
+    return "".join(chars)
+
+
+def normalize_name(text: str, work: str | None = None) -> str:
+    """Normalize a character name for flexible matching. Safe to copy into NAG."""
+    value = SEPARATORS.sub("", to_halfwidth(text or "").strip())
+    value = BRACKETS.sub("", value).casefold()
+    if work:
+        token = normalize_name(work)
+        if token and value.startswith(token) and len(value) > len(token):
+            value = value[len(token):]
+        elif token and value.endswith(token) and len(value) > len(token):
+            value = value[: -len(token)]
+    return value
+
+
+def entry_keys(entry: dict, work: str | None = None) -> set[str]:
+    keys = {normalize_name(entry.get("name") or "", work)}
+    for alias in entry.get("aliases") or []:
+        keys.add(normalize_name(alias, work))
+    path = entry.get("image_path")
+    if path:
+        keys.add(normalize_name(Path(path).stem, work))
+    keys.discard("")
+    return keys
+
+
+def match_name(query: str, entries: list[dict], work: str | None = None) -> tuple[dict | None, str]:
+    """Match a roster query to one checklist entry.
+
+    Returns (entry, "match") on a unique hit, or (None, "none" / "ambiguous").
+    """
+    needle = normalize_name(query, work)
+    if not needle:
+        return None, "none"
+    exact = [entry for entry in entries if needle in entry_keys(entry, work)]
+    if len(exact) == 1:
+        return exact[0], "match"
+    if len(exact) > 1:
+        return None, "ambiguous"
+    contained = []
+    for entry in entries:
+        if any(needle in key or key in needle for key in entry_keys(entry, work)):
+            contained.append(entry)
+    if len(contained) == 1:
+        return contained[0], "match"
+    if len(contained) > 1:
+        return None, "ambiguous"
+    return None, "none"
+
+
+def parse_aliases(text: str) -> list[str]:
+    match = ALIAS_RE.search(text)
+    if not match:
+        return []
+    return [part.strip() for part in ALIAS_SPLIT.split(match.group(1)) if part.strip()]
+
+
 def parse_checklist(text: str) -> list[dict]:
     items = []
     for lineno, raw in enumerate(text.splitlines(), 1):
@@ -60,14 +132,22 @@ def parse_checklist(text: str) -> list[dict]:
             continue
         rest = match.group("rest").strip()
         link = LINK_RE.match(rest)
-        image_path = unquote(link.group("path").strip()) if link else None
-        name = link.group("text").strip() if link else rest
+        if link:
+            name = link.group("text").strip()
+            image_path = unquote(link.group("path").strip()) or None
+            remainder = rest[link.end():].strip()
+        else:
+            image_path = None
+            remainder = rest
+            alias_match = ALIAS_RE.search(remainder)
+            name = remainder[: alias_match.start()].strip() if alias_match else remainder
         items.append(
             {
                 "lineno": lineno,
                 "checked": match.group("check") in {"x", "X"},
                 "name": name,
-                "image_path": image_path or None,
+                "image_path": image_path,
+                "aliases": parse_aliases(remainder),
             }
         )
     return items
@@ -133,11 +213,19 @@ def check_work(work_dir: Path) -> tuple[list[str], list[str], int]:
     errors: list[str] = []
     warnings: list[str] = []
     linked: set[str] = set()
+    seen_keys: dict[str, str] = {}
+    work = work_dir.name
     for item in items:
         label = item["name"] or f"第 {item['lineno']} 行"
         rel = item["image_path"]
         if rel:
             linked.add(Path(rel).name)
+        for key in entry_keys(item, work):
+            previous = seen_keys.get(key)
+            if previous and previous != label:
+                warnings.append(f"别名或名称冲突：「{key}」同时对应 {previous} 与 {label}")
+            else:
+                seen_keys[key] = label
         if item["checked"]:
             if not rel:
                 errors.append(f"{label}：已勾选，但没有指向图片的链接")

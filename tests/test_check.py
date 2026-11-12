@@ -151,5 +151,118 @@ class CliTests(unittest.TestCase):
         self.assertEqual(chk.main(["/tmp/does-not-exist-check-work"]), 2)
 
 
+
+
+class AliasParseTests(unittest.TestCase):
+    def test_fullwidth_colon_and_enumeration_comma(self):
+        items = chk.parse_checklist("- [x] [雷电将军](雷电将军.jpg) 别名：雷电影、影\n")
+        self.assertEqual(items[0]["name"], "雷电将军")
+        self.assertEqual(items[0]["aliases"], ["雷电影", "影"])
+
+    def test_halfwidth_colon_and_other_separators(self):
+        items = chk.parse_checklist("- [x] [钟离](钟离.jpg) 别名:岩王爷,摩拉克斯，往生者\n")
+        self.assertEqual(items[0]["aliases"], ["岩王爷", "摩拉克斯", "往生者"])
+
+    def test_slash_separators(self):
+        items = chk.parse_checklist("- [x] [温迪](温迪.jpg) 别名：巴巴托斯/风神／诗人\n")
+        self.assertEqual(items[0]["aliases"], ["巴巴托斯", "风神", "诗人"])
+
+    def test_plain_item_can_have_aliases(self):
+        items = chk.parse_checklist("- [ ] 待收集角色 别名：别称\n")
+        self.assertEqual(items[0]["name"], "待收集角色")
+        self.assertEqual(items[0]["aliases"], ["别称"])
+        self.assertIsNone(items[0]["image_path"])
+
+
+class MatchNameTests(unittest.TestCase):
+    def setUp(self):
+        self.entries = [
+            {"name": "温迪", "aliases": [], "image_path": "温迪.jpg"},
+            {"name": "雷电将军", "aliases": ["雷电影", "影"], "image_path": "雷电将军.jpg"},
+            {"name": "纳西妲", "aliases": [], "image_path": "纳西妲.jpg"},
+            {"name": "芙宁娜", "aliases": [], "image_path": "芙宁娜.webp"},
+            {"name": "芙卡洛斯", "aliases": [], "image_path": "芙卡洛斯.webp"},
+        ]
+        self.work = "原神"
+
+    def test_normalize_work_wrappers_and_separators(self):
+        expected = chk.normalize_name("温迪", "原神")
+        for query in (
+            "温迪",
+            "  温迪  ",
+            "原神·温迪",
+            "原神-温迪",
+            "温迪（原神）",
+            "温迪(原神)",
+            "【原神】温迪",
+            "原神/温迪",
+        ):
+            self.assertEqual(chk.normalize_name(query, "原神"), expected, query)
+
+    def test_fullwidth_parentheses_and_spaces(self):
+        self.assertEqual(
+            chk.normalize_name("温　迪（原神）", "原神"),
+            chk.normalize_name("温迪", "原神"),
+        )
+
+    def test_match_link_text_and_filename_variants(self):
+        for query in ("温迪", "原神·温迪", "温迪（原神）", "【原神】温迪"):
+            entry, status = chk.match_name(query, self.entries, "原神")
+            self.assertEqual(status, "match", query)
+            self.assertEqual(entry["name"], "温迪")
+
+    def test_match_aliases(self):
+        for query in ("雷电影", "影", "原神·雷电影"):
+            entry, status = chk.match_name(query, self.entries, "原神")
+            self.assertEqual(status, "match", query)
+            self.assertEqual(entry["name"], "雷电将军")
+
+    def test_unique_contains_match(self):
+        entry, status = chk.match_name("雷电", self.entries, "原神")
+        self.assertEqual(status, "match")
+        self.assertEqual(entry["name"], "雷电将军")
+
+    def test_ambiguous_contains_match(self):
+        entry, status = chk.match_name("芙", self.entries, "原神")
+        self.assertIsNone(entry)
+        self.assertEqual(status, "ambiguous")
+
+    def test_no_match(self):
+        entry, status = chk.match_name("散兵", self.entries, "原神")
+        self.assertIsNone(entry)
+        self.assertEqual(status, "none")
+
+    def test_ambiguous_exact_alias_collision(self):
+        entries = [
+            {"name": "角色甲", "aliases": ["同名"], "image_path": "角色甲.jpg"},
+            {"name": "角色乙", "aliases": ["同名"], "image_path": "角色乙.jpg"},
+        ]
+        entry, status = chk.match_name("同名", entries, "原神")
+        self.assertIsNone(entry)
+        self.assertEqual(status, "ambiguous")
+
+
+class AliasCollisionTests(unittest.TestCase):
+    def setUp(self):
+        self._temp = tempfile.TemporaryDirectory()
+        self.work = Path(self._temp.name) / "原神"
+        self.work.mkdir()
+
+    def tearDown(self):
+        self._temp.cleanup()
+
+    def test_alias_collision_is_warning(self):
+        write_image(self.work / "角色甲.jpg", JPEG_HEADER, chk.SIZE_MIN)
+        write_image(self.work / "角色乙.jpg", JPEG_HEADER, chk.SIZE_MIN)
+        write_checklist(
+            self.work,
+            "- [x] [角色甲](角色甲.jpg) 别名：同名\n- [x] [角色乙](角色乙.jpg) 别名：同名\n",
+        )
+        errors, warnings, count = chk.check_work(self.work)
+        self.assertEqual(errors, [])
+        self.assertEqual(count, 2)
+        self.assertTrue(any("冲突" in warning for warning in warnings))
+
+
 if __name__ == "__main__":
     unittest.main()
