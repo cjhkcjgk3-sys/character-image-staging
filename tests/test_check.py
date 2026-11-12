@@ -51,6 +51,27 @@ class ParseTests(unittest.TestCase):
         self.assertFalse(items[0]["checked"])
         self.assertIsNone(items[0]["image_path"])
 
+    def test_fullwidth_version_brackets_in_link(self):
+        items = chk.parse_checklist("- [x] [三月七（巡猎）](三月七（巡猎）.jpg)\n")
+        self.assertEqual(items[0]["name"], "三月七（巡猎）")
+        self.assertEqual(items[0]["image_path"], "三月七（巡猎）.jpg")
+
+    def test_angle_bracket_link_path(self):
+        items = chk.parse_checklist("- [x] [三月七（巡猎）](<三月七（巡猎）.jpg>)\n")
+        self.assertEqual(items[0]["name"], "三月七（巡猎）")
+        self.assertEqual(items[0]["image_path"], "三月七（巡猎）.jpg")
+
+    def test_angle_bracket_link_with_spaces(self):
+        items = chk.parse_checklist("- [x] [角色 名](<角色 名.jpg>)\n")
+        self.assertEqual(items[0]["image_path"], "角色 名.jpg")
+
+    def test_work_alias_line_is_not_a_checklist_item(self):
+        items = chk.parse_checklist("作品别名：星铁、崩坏星穹铁道\n\n- [ ] 姬子\n")
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["name"], "姬子")
+        self.assertEqual(chk.parse_work_aliases("作品别名：星铁、崩坏星穹铁道\n"), ["星铁", "崩坏星穹铁道"])
+        self.assertIsNone(chk.parse_work_aliases("- [ ] 姬子\n"))
+
 
 class CheckWorkTests(unittest.TestCase):
     def setUp(self):
@@ -139,6 +160,14 @@ class RepoSampleTests(unittest.TestCase):
         errors, _warnings, count = chk.check_work(work)
         self.assertEqual(errors, [])
         self.assertGreater(count, 0)
+
+    def test_all_repo_work_folders_pass(self):
+        works = chk.find_work_dirs(ROOT)
+        if not works:
+            self.skipTest("当前工作区没有作品目录")
+        for work in works:
+            errors, _warnings, _count = chk.check_work(work)
+            self.assertEqual(errors, [], work.name)
 
 
 class CliTests(unittest.TestCase):
@@ -257,6 +286,170 @@ class AliasCollisionTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(count, 2)
         self.assertTrue(any("冲突" in warning for warning in warnings))
+
+
+class VersionAndWorkAliasTests(unittest.TestCase):
+    def setUp(self):
+        self.work = "星穹铁道"
+        self.entries = [
+            {"name": "姬子", "aliases": [], "image_path": "姬子.jpg"},
+            {"name": "三月七", "aliases": [], "image_path": "三月七.jpg"},
+            {"name": "三月七（巡猎）", "aliases": [], "image_path": "三月七（巡猎）.jpg"},
+        ]
+
+    def _match(self, query, entries=None, work=None, work_aliases=None):
+        return chk.match_name(
+            query,
+            entries if entries is not None else self.entries,
+            work if work is not None else self.work,
+            work_aliases,
+        )
+
+    def test_version_brackets_are_not_stripped(self):
+        self.assertEqual(chk.normalize_name("三月七", self.work), "三月七")
+        self.assertEqual(chk.normalize_name("三月七（巡猎）", self.work), "三月七巡猎")
+        self.assertNotEqual(
+            chk.normalize_name("三月七（巡猎）", self.work),
+            chk.normalize_name("三月七", self.work),
+        )
+
+    def test_work_brackets_are_stripped_but_version_kept(self):
+        self.assertEqual(
+            chk.normalize_name("姬子（星穹铁道）", self.work),
+            chk.normalize_name("姬子", self.work),
+        )
+        self.assertEqual(
+            chk.normalize_name("三月七（巡猎）（星穹铁道）", self.work),
+            chk.normalize_name("三月七（巡猎）", self.work),
+        )
+
+    def test_default_work_aliases_as_prefix_or_suffix(self):
+        expected = chk.normalize_name("姬子", self.work)
+        for query in (
+            "姬子",
+            "姬子（星穹铁道）",
+            "姬子(星穹铁道)",
+            "星穹铁道·姬子",
+            "崩坏星穹铁道·姬子",
+            "崩坏：星穹铁道·姬子",
+            "【星铁】姬子",
+            "星铁-姬子",
+            "星铁/姬子",
+        ):
+            self.assertEqual(chk.normalize_name(query, self.work), expected, query)
+            entry, status = self._match(query)
+            self.assertEqual(status, "match", query)
+            self.assertEqual(entry["name"], "姬子", query)
+
+    def test_query_base_prefers_exact_over_variant(self):
+        entry, status = self._match("三月七")
+        self.assertEqual(status, "match")
+        self.assertEqual(entry["name"], "三月七")
+
+    def test_query_fullwidth_variant(self):
+        entry, status = self._match("三月七（巡猎）")
+        self.assertEqual(status, "match")
+        self.assertEqual(entry["name"], "三月七（巡猎）")
+
+    def test_query_halfwidth_variant(self):
+        entry, status = self._match("三月七(巡猎)")
+        self.assertEqual(status, "match")
+        self.assertEqual(entry["name"], "三月七（巡猎）")
+
+    def test_query_dot_variant(self):
+        entry, status = self._match("三月七·巡猎")
+        self.assertEqual(status, "match")
+        self.assertEqual(entry["name"], "三月七（巡猎）")
+
+    def test_query_reordered_variant(self):
+        entry, status = self._match("巡猎三月七")
+        self.assertEqual(status, "match")
+        self.assertEqual(entry["name"], "三月七（巡猎）")
+
+    def test_only_variant_contains_match_if_unique(self):
+        entries = [self.entries[2]]
+        entry, status = self._match("三月七", entries)
+        self.assertEqual(status, "match")
+        self.assertEqual(entry["name"], "三月七（巡猎）")
+
+    def test_base_name_ambiguous_when_two_variants_only(self):
+        entries = [
+            {"name": "三月七（巡猎）", "aliases": [], "image_path": "三月七（巡猎）.jpg"},
+            {"name": "三月七（同谐）", "aliases": [], "image_path": "三月七（同谐）.jpg"},
+        ]
+        entry, status = self._match("三月七", entries)
+        self.assertIsNone(entry)
+        self.assertEqual(status, "ambiguous")
+
+    def test_honkai3_aliases(self):
+        self.assertEqual(
+            chk.normalize_name("芽衣（崩坏三）", "崩坏3"),
+            chk.normalize_name("芽衣", "崩坏3"),
+        )
+        self.assertEqual(
+            chk.normalize_name("崩3·芽衣", "崩坏3"),
+            chk.normalize_name("芽衣", "崩坏3"),
+        )
+
+    def test_checklist_work_aliases_win_over_defaults(self):
+        # Without 星铁 in the checklist line, that wrapper stays.
+        aliases = ["自定义简称"]
+        self.assertEqual(
+            chk.normalize_name("【自定义简称】姬子", "星穹铁道", aliases),
+            chk.normalize_name("姬子", "星穹铁道", aliases),
+        )
+        self.assertNotEqual(
+            chk.normalize_name("【星铁】姬子", "星穹铁道", aliases),
+            chk.normalize_name("姬子", "星穹铁道", aliases),
+        )
+
+    def test_folder_name_always_kept_as_work_alias(self):
+        aliases = ["自定义简称"]
+        self.assertEqual(
+            chk.normalize_name("姬子（星穹铁道）", "星穹铁道", aliases),
+            chk.normalize_name("姬子", "星穹铁道", aliases),
+        )
+
+
+class WorkAliasChecklistTests(unittest.TestCase):
+    def setUp(self):
+        self._temp = tempfile.TemporaryDirectory()
+        self.work = Path(self._temp.name) / "星穹铁道"
+        self.work.mkdir()
+
+    def tearDown(self):
+        self._temp.cleanup()
+
+    def test_checklist_work_alias_used_by_check_work_keys(self):
+        write_image(self.work / "姬子.jpg", JPEG_HEADER, chk.SIZE_MIN)
+        write_checklist(
+            self.work,
+            "作品别名：自定义简称\n\n- [x] [姬子](姬子.jpg)\n",
+        )
+        errors, warnings, count = chk.check_work(self.work)
+        self.assertEqual(errors, [])
+        self.assertEqual(warnings, [])
+        self.assertEqual(count, 1)
+        items = chk.parse_checklist((self.work / "00-清单.md").read_text(encoding="utf-8"))
+        aliases = chk.parse_work_aliases((self.work / "00-清单.md").read_text(encoding="utf-8"))
+        self.assertEqual(aliases, ["自定义简称"])
+        entry, status = chk.match_name("【自定义简称】姬子", items, "星穹铁道", aliases)
+        self.assertEqual(status, "match")
+        self.assertEqual(entry["name"], "姬子")
+
+    def test_versioned_entries_are_not_alias_collisions(self):
+        write_image(self.work / "三月七.jpg", JPEG_HEADER, chk.SIZE_MIN)
+        write_image(self.work / "三月七（巡猎）.jpg", JPEG_HEADER, chk.SIZE_MIN)
+        write_checklist(
+            self.work,
+            "- [x] [三月七](三月七.jpg)\n- [x] [三月七（巡猎）](三月七（巡猎）.jpg)\n",
+        )
+        errors, warnings, count = chk.check_work(self.work)
+        self.assertEqual(errors, [])
+        self.assertEqual(count, 2)
+        self.assertEqual(warnings, [])
+
+
 
 
 if __name__ == "__main__":

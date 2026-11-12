@@ -24,11 +24,33 @@ MIME_EXTENSIONS = {
 }
 
 CHECK_RE = re.compile(r"^-\s+\[(?P<check>[ xX])\]\s+(?P<rest>.+)$")
-LINK_RE = re.compile(r"^\[(?P<text>[^\]]+)\]\((?P<path>[^)]+)\)")
+# Prefer <path> so names with half-width parentheses can still be linked.
+LINK_RE = re.compile(r"^\[(?P<text>[^\]]+)\]\((?P<path><[^>]+>|[^)]+)\)")
 ALIAS_RE = re.compile(r"别名[:：]\s*(.+)$")
+WORK_ALIAS_RE = re.compile(r"^作品别名[:：]\s*(.*)$")
 ALIAS_SPLIT = re.compile(r"[、,，/／]+")
-SEPARATORS = re.compile(r"[\s·・‧•∙⋅\-–—/／]+")
+SEPARATORS = re.compile(r"[\s·・‧•∙⋅\-–—/／:：]+")
 BRACKETS = re.compile(r"[\[\]【】()（）『』「」<>《》]+")
+# Capture a leading or trailing bracket group, including full-width pairs.
+BRACKET_GROUP_RE = re.compile(
+    r"[\[【(（『「<《]([^\[\]【】()（）『』「」<>《》]*)[\]】)）』」>》]"
+)
+SEP_CHARS = set(" \t·・‧•∙⋅-–—/／:：")
+
+# Built-in work-name aliases. A 作品别名： line in 00-清单.md replaces this list
+# (the folder name is always kept). New works can skip a code change by using that line.
+DEFAULT_WORK_ALIASES = {
+    "星穹铁道": ["崩坏：星穹铁道", "崩坏星穹铁道", "星铁"],
+    "崩坏3": ["崩坏三", "崩3"],
+    "终末地": ["明日方舟：终末地"],
+    "战双帕弥什": ["战双"],
+    "绝区零": [],
+    "鸣潮": [],
+    "明日方舟": ["方舟"],
+    "碧蓝航线": [],
+    "异环": [],
+    "原神": [],
+}
 
 
 def repo_root() -> Path:
@@ -68,52 +90,202 @@ def to_halfwidth(text: str) -> str:
     return "".join(chars)
 
 
-def normalize_name(text: str, work: str | None = None) -> str:
-    """Normalize a character name for flexible matching. Safe to copy into NAG."""
+def fold_token(text: str) -> str:
+    """Fold a token for comparison: no work-wrapper logic, no version meaning."""
     value = SEPARATORS.sub("", to_halfwidth(text or "").strip())
-    value = BRACKETS.sub("", value).casefold()
+    return BRACKETS.sub("", value).casefold()
+
+
+def resolve_work_tokens(work: str | None, work_aliases: list[str] | None = None) -> set[str]:
+    if work_aliases is not None:
+        raw = list(work_aliases)
+    elif work:
+        raw = list(DEFAULT_WORK_ALIASES.get(work, []))
+    else:
+        raw = []
     if work:
-        token = normalize_name(work)
-        if token and value.startswith(token) and len(value) > len(token):
-            value = value[len(token):]
-        elif token and value.endswith(token) and len(value) > len(token):
-            value = value[: -len(token)]
-    return value
+        raw = [work, *raw]
+    return {fold_token(alias) for alias in raw if fold_token(alias)}
 
 
-def entry_keys(entry: dict, work: str | None = None) -> set[str]:
-    keys = {normalize_name(entry.get("name") or "", work)}
+def _is_sep_char(char: str) -> bool:
+    return char in SEP_CHARS
+
+
+def strip_work_wrappers(text: str, work_tokens: set[str]) -> str:
+    """Remove work-name prefixes/suffixes and work-only brackets. Keep version brackets."""
+    if not work_tokens:
+        return text
+    value = text
+    changed = True
+    while changed and value:
+        changed = False
+        stripped = value.strip()
+        # Leading bracket group that names the work: 【星铁】姬子
+        lead = re.match(
+            r"^([\[【(（『「<《]([^\[\]【】()（）『』「」<>《》]*)[\]】)）』」>》])[ \t·・‧•∙⋅\-–—/／:：]*",
+            stripped,
+        )
+        if lead and fold_token(lead.group(2)) in work_tokens:
+            value = stripped[lead.end() :]
+            changed = True
+            continue
+        # Trailing bracket group that names the work: 姬子（星穹铁道）
+        trail = re.search(
+            r"[ \t·・‧•∙⋅\-–—/／:：]*([\[【(（『「<《]([^\[\]【】()（）『』「」<>《》]*)[\]】)）』」>》])$",
+            stripped,
+        )
+        if trail and fold_token(trail.group(2)) in work_tokens:
+            value = stripped[: trail.start()]
+            changed = True
+            continue
+        # Leading work + separator: 崩坏星穹铁道·姬子 / 原神-温迪
+        for index, char in enumerate(stripped):
+            if not _is_sep_char(char):
+                continue
+            left, right = stripped[:index], stripped[index + 1 :]
+            if fold_token(left) in work_tokens and fold_token(right):
+                value = right
+                changed = True
+                break
+        if changed:
+            continue
+        # Trailing separator + work
+        for index, char in enumerate(stripped):
+            if not _is_sep_char(char):
+                continue
+            left, right = stripped[:index], stripped[index + 1 :]
+            if fold_token(right) in work_tokens and fold_token(left):
+                value = left
+                changed = True
+                break
+    return value.strip()
+
+
+def normalize_name(
+    text: str,
+    work: str | None = None,
+    work_aliases: list[str] | None = None,
+) -> str:
+    """Normalize a character name for flexible matching. Safe to copy into NAG.
+
+    Only work-name wrappers are stripped (folder name or work aliases).
+    Version brackets such as 三月七（巡猎） keep their inner text, so they
+    do not collapse to the base name 三月七.
+    """
+    value = to_halfwidth(text or "").strip()
+    value = strip_work_wrappers(value, resolve_work_tokens(work, work_aliases))
+    value = BRACKETS.sub("", value)
+    return SEPARATORS.sub("", value).casefold()
+
+
+def name_identity(
+    text: str,
+    work: str | None = None,
+    work_aliases: list[str] | None = None,
+) -> tuple[str, list[str]]:
+    """Return (core_name, version_tokens) after removing work wrappers only."""
+    value = to_halfwidth(text or "").strip()
+    value = strip_work_wrappers(value, resolve_work_tokens(work, work_aliases))
+    versions: list[str] = []
+
+    def _keep_version(match: re.Match[str]) -> str:
+        token = fold_token(match.group(1))
+        if token:
+            versions.append(token)
+        return ""
+
+    core = fold_token(BRACKET_GROUP_RE.sub(_keep_version, value))
+    return core, versions
+
+
+def entry_keys(
+    entry: dict,
+    work: str | None = None,
+    work_aliases: list[str] | None = None,
+) -> set[str]:
+    keys = {normalize_name(entry.get("name") or "", work, work_aliases)}
     for alias in entry.get("aliases") or []:
-        keys.add(normalize_name(alias, work))
+        keys.add(normalize_name(alias, work, work_aliases))
     path = entry.get("image_path")
     if path:
-        keys.add(normalize_name(Path(path).stem, work))
+        keys.add(normalize_name(Path(path).stem, work, work_aliases))
     keys.discard("")
     return keys
 
 
-def match_name(query: str, entries: list[dict], work: str | None = None) -> tuple[dict | None, str]:
+def _identity_sets(
+    entry: dict,
+    work: str | None,
+    work_aliases: list[str] | None,
+) -> list[list[str]]:
+    sources = [entry.get("name") or ""]
+    sources.extend(entry.get("aliases") or [])
+    path = entry.get("image_path")
+    if path:
+        sources.append(Path(path).stem)
+    identities = []
+    for source in sources:
+        core, versions = name_identity(source, work, work_aliases)
+        tokens = [token for token in [core, *versions] if token]
+        if tokens:
+            identities.append(tokens)
+    return identities
+
+
+def _coverage(
+    needle: str,
+    entry: dict,
+    work: str | None,
+    work_aliases: list[str] | None,
+) -> int:
+    """How much of the query this entry explains. 0 means no loose match."""
+    scores = []
+    for tokens in _identity_sets(entry, work, work_aliases):
+        if all(token in needle for token in tokens):
+            # The query contains this entry's core name and any version tags.
+            scores.append(sum(len(token) for token in tokens))
+    for key in entry_keys(entry, work, work_aliases):
+        if key in needle:
+            scores.append(len(key))
+        elif needle in key:
+            # A short query contained by several names should stay ambiguous,
+            # so every such hit gets the same score (the query length).
+            scores.append(len(needle))
+    return max(scores) if scores else 0
+
+
+def match_name(
+    query: str,
+    entries: list[dict],
+    work: str | None = None,
+    work_aliases: list[str] | None = None,
+) -> tuple[dict | None, str]:
     """Match a roster query to one checklist entry.
 
     Returns (entry, "match") on a unique hit, or (None, "none" / "ambiguous").
+    Exact key matches win over contains / token coverage.
     """
-    needle = normalize_name(query, work)
+    needle = normalize_name(query, work, work_aliases)
     if not needle:
         return None, "none"
-    exact = [entry for entry in entries if needle in entry_keys(entry, work)]
+    exact = [entry for entry in entries if needle in entry_keys(entry, work, work_aliases)]
     if len(exact) == 1:
         return exact[0], "match"
     if len(exact) > 1:
         return None, "ambiguous"
-    contained = []
+    scored: list[tuple[dict, int]] = []
     for entry in entries:
-        if any(needle in key or key in needle for key in entry_keys(entry, work)):
-            contained.append(entry)
-    if len(contained) == 1:
-        return contained[0], "match"
-    if len(contained) > 1:
-        return None, "ambiguous"
-    return None, "none"
+        score = _coverage(needle, entry, work, work_aliases)
+        if score:
+            scored.append((entry, score))
+    if not scored:
+        return None, "none"
+    best = max(item[1] for item in scored)
+    winners = [entry for entry, score in scored if score == best]
+    if len(winners) == 1:
+        return winners[0], "match"
+    return None, "ambiguous"
 
 
 def parse_aliases(text: str) -> list[str]:
@@ -121,6 +293,25 @@ def parse_aliases(text: str) -> list[str]:
     if not match:
         return []
     return [part.strip() for part in ALIAS_SPLIT.split(match.group(1)) if part.strip()]
+
+
+def parse_work_aliases(text: str) -> list[str] | None:
+    """Return aliases from a 作品别名： line, or None if the line is absent."""
+    found: list[str] | None = None
+    for raw in text.splitlines():
+        line = raw.strip().lstrip("\ufeff")
+        match = WORK_ALIAS_RE.match(line)
+        if not match:
+            continue
+        found = [part.strip() for part in ALIAS_SPLIT.split(match.group(1)) if part.strip()]
+    return found
+
+
+def _link_path(path: str) -> str:
+    value = path.strip()
+    if value.startswith("<") and value.endswith(">") and len(value) >= 2:
+        value = value[1:-1].strip()
+    return unquote(value)
 
 
 def parse_checklist(text: str) -> list[dict]:
@@ -134,8 +325,8 @@ def parse_checklist(text: str) -> list[dict]:
         link = LINK_RE.match(rest)
         if link:
             name = link.group("text").strip()
-            image_path = unquote(link.group("path").strip()) or None
-            remainder = rest[link.end():].strip()
+            image_path = _link_path(link.group("path")) or None
+            remainder = rest[link.end() :].strip()
         else:
             image_path = None
             remainder = rest
@@ -209,7 +400,9 @@ def check_work(work_dir: Path) -> tuple[list[str], list[str], int]:
     checklist = work_dir / CHECKLIST_NAME
     if not checklist.is_file():
         return [f"找不到 {CHECKLIST_NAME}：{checklist}"], [], 0
-    items = parse_checklist(checklist.read_text(encoding="utf-8"))
+    text = checklist.read_text(encoding="utf-8")
+    items = parse_checklist(text)
+    work_aliases = parse_work_aliases(text)
     errors: list[str] = []
     warnings: list[str] = []
     linked: set[str] = set()
@@ -220,7 +413,7 @@ def check_work(work_dir: Path) -> tuple[list[str], list[str], int]:
         rel = item["image_path"]
         if rel:
             linked.add(Path(rel).name)
-        for key in entry_keys(item, work):
+        for key in entry_keys(item, work, work_aliases):
             previous = seen_keys.get(key)
             if previous and previous != label:
                 warnings.append(f"别名或名称冲突：「{key}」同时对应 {previous} 与 {label}")
