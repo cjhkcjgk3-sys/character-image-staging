@@ -21,6 +21,7 @@
 catalog/catalog.json       机器可读图片清单，首批为来源记录
 docs/design.md             总体方案、首版范围和验收
 docs/catalog-contract.md   清单格式和读写约定
+docs/image-guidelines.md   图片质量、压缩、中文命名和目录规则
 examples/catalog.json      虚构条目的格式示例，不是收集结果
 images/                    已收集的图片；按作品组织
 tasks/                     可恢复的收集任务和待确认记录
@@ -29,6 +30,8 @@ NEXT.md                    当前项目状态和下一步
 ```
 
 `catalog/catalog.json` 是待导入的图片清单。图片与清单需要一起维护，不能把图片链接、缩略图或文字简介当成已经保存的原图。示例中的名称均为虚构，不参与实际导入。
+
+收集与整理图片时，参阅[角色图片收集与整理方法](docs/image-guidelines.md)。
 
 2026-11-12 的原神试收集包括八条来源记录。由于公开转载许可未核实，仓库只保存链接，所有条目均标记为 `needs_review`，不能当作已导入图片。个人测试样本另外交付，不属于本公开仓库。
 
