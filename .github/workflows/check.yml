@@ -14,5 +14,5 @@ jobs:
           python-version: "3.9"
       - name: Run unit tests
         run: python3 -m unittest discover -s tests -v
-      - name: Check generated catalogs
-        run: python3 tools/validate_catalog.py --check --all
+      - name: Check work folders
+        run: python3 tools/check.py
