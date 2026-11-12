@@ -6,6 +6,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import zlib
 from pathlib import Path
 from urllib.parse import quote
 
@@ -19,9 +20,19 @@ PNG_HEADER = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
 WEBP_HEADER = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 8
 
 
-def write_image(path: Path, header: bytes, size: int) -> None:
+def write_image(path: Path, header: bytes, size: int, complete: bool = True) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes((header + b"\x00" * max(0, size - len(header)))[:size])
+    data = bytearray((header + b"\x00" * max(0, size - len(header)))[:size])
+    if complete:
+        if header.startswith(b"\x89PNG"):
+            body = b"IDAT" + b"\x00" * (size - 8 - 12 - 12)
+            chunk = (len(body) - 4).to_bytes(4, "big") + body + zlib.crc32(body).to_bytes(4, "big")
+            data = bytearray(b"\x89PNG\r\n\x1a\n" + chunk + chk.PNG_IEND)
+        elif header.startswith(b"RIFF"):
+            data[4:8] = (size - 8).to_bytes(4, "little")
+        elif header.startswith(b"\xff\xd8"):
+            data[-2:] = b"\xff\xd9"
+    path.write_bytes(bytes(data))
 
 
 def write_checklist(work_dir: Path, body: str) -> None:
@@ -100,6 +111,23 @@ class CheckWorkTests(unittest.TestCase):
         write_checklist(self.work, "- [x] [芙宁娜](芙宁娜.webp)\n")
         errors, _warnings, _count = chk.check_work(self.work)
         self.assertTrue(any("文件大小" in error for error in errors))
+
+    def test_truncated_images_fail(self):
+        write_image(self.work / "a.png", PNG_HEADER, chk.SIZE_MIN, complete=False)
+        webp = bytearray(WEBP_HEADER + b"\x00" * (chk.SIZE_MIN - len(WEBP_HEADER)))
+        webp[4:8] = (chk.SIZE_MIN + 1000).to_bytes(4, "little")
+        (self.work / "b.webp").write_bytes(bytes(webp))
+        write_image(self.work / "c.jpg", JPEG_HEADER[:3], chk.SIZE_MIN, complete=False)
+        write_checklist(self.work, "- [x] [甲](a.png)\n- [x] [乙](b.webp)\n- [x] [丙](c.jpg)\n")
+        errors, _warnings, _count = chk.check_work(self.work)
+        self.assertEqual(sum("不完整" in error for error in errors), 3)
+
+    def test_complete_png_and_webp_pass(self):
+        write_image(self.work / "a.png", PNG_HEADER, chk.SIZE_MIN)
+        write_image(self.work / "b.webp", WEBP_HEADER, chk.SIZE_MIN)
+        write_checklist(self.work, "- [x] [甲](a.png)\n- [x] [乙](b.webp)\n")
+        errors, _warnings, _count = chk.check_work(self.work)
+        self.assertEqual(errors, [])
 
     def test_unchecked_missing_file_is_fine(self):
         write_checklist(self.work, "- [ ] [待收集](待收集.jpg)\n- [ ] 另一角色\n")

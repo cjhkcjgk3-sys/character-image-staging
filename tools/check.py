@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import zlib
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -67,6 +68,45 @@ def sniff_mime(path: Path) -> str | None:
     if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
         return "image/webp"
     return None
+
+
+PNG_IEND = b"\x00\x00\x00\x00IEND\xaeB`\x82"
+
+
+def png_chunks_ok(path: Path) -> bool:
+    """Walk every PNG chunk and verify its CRC, so cut or spliced files fail."""
+    data = path.read_bytes()
+    pos = 8
+    while pos + 12 <= len(data):
+        length = int.from_bytes(data[pos:pos + 4], "big")
+        kind = data[pos + 4:pos + 8]
+        end = pos + 12 + length
+        if not kind.isalpha() or end > len(data):
+            return False
+        crc = int.from_bytes(data[end - 4:end], "big")
+        if zlib.crc32(data[pos + 4:end - 4]) & 0xFFFFFFFF != crc:
+            return False
+        if kind == b"IEND":
+            return True
+        pos = end
+    return False
+
+
+def is_complete(path: Path, mime: str) -> bool:
+    """Cheap structural check that the file was not cut off mid-download."""
+    size = path.stat().st_size
+    with path.open("rb") as handle:
+        header = handle.read(12)
+        handle.seek(max(0, size - 1024))
+        tail = handle.read()
+    if mime == "image/png":
+        return png_chunks_ok(path) and tail.endswith(PNG_IEND)
+    if mime == "image/webp":
+        declared = int.from_bytes(header[4:8], "little") + 8
+        return size >= declared
+    if mime == "image/jpeg":
+        return b"\xff\xd9" in tail
+    return True
 
 
 def extension_mime(path: Path) -> str | None:
@@ -376,6 +416,8 @@ def inspect_checked(work_dir: Path, rel: str) -> list[str]:
         errors.append(f"无法识别图片文件头：{rel}")
     elif mime != expected:
         errors.append(f"图片文件头与扩展名不一致：{rel}")
+    if mime is not None and not is_complete(resolved, mime):
+        errors.append(f"图片文件不完整（可能下载被截断，打不开）：{rel}")
     size = resolved.stat().st_size
     if not (SIZE_MIN <= size <= SIZE_MAX):
         errors.append(
