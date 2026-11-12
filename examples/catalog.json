@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "items": [
+    {
+      "id": "example-001",
+      "roster_name": "角色甲（作品甲）",
+      "work": "作品甲",
+      "character": "角色甲",
+      "variant": "默认立绘",
+      "status": "needs_review",
+      "selection": "unconfirmed",
+      "image_path": null,
+      "sha256": null,
+      "mime_type": null,
+      "source_page": null,
+      "source_image": null,
+      "note": "虚构示例；尚无实际图片。"
+    }
+  ]
+}
