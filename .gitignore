@@ -5,3 +5,4 @@ __pycache__/
 .image-audit/
 .env
 .env.*
+out/
