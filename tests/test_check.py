@@ -63,6 +63,17 @@ class ParseTests(unittest.TestCase):
         self.assertFalse(items[0]["checked"])
         self.assertIsNone(items[0]["image_path"])
 
+    def test_note_is_not_part_of_name_or_aliases(self):
+        items = chk.parse_checklist(
+            "- [ ] 山风 备注：残图（脸部透明空洞），需重找\n"
+            "- [ ] 旗风 别名：Hatakaze 备注：残图（头被裁掉）\n"
+        )
+        self.assertEqual(items[0]["name"], "山风")
+        self.assertEqual(items[0]["aliases"], [])
+        self.assertEqual(items[1]["name"], "旗风")
+        self.assertEqual(items[1]["aliases"], ["Hatakaze"])
+        self.assertFalse(items[0]["checked"])
+
     def test_fullwidth_version_brackets_in_link(self):
         items = chk.parse_checklist("- [x] [三月七（巡猎）](三月七（巡猎）.jpg)\n")
         self.assertEqual(items[0]["name"], "三月七（巡猎）")

@@ -29,6 +29,8 @@ CHECK_RE = re.compile(r"^-\s+\[(?P<check>[ xX])\]\s+(?P<rest>.+)$")
 # Prefer <path> so names with half-width parentheses can still be linked.
 LINK_RE = re.compile(r"^\[(?P<text>[^\]]+)\]\((?P<path><[^>]+>|[^)]+)\)")
 ALIAS_RE = re.compile(r"别名[:：]\s*(.+)$")
+# 行尾「备注：…」只给人看（例如未勾选项的待重找原因），不属于名字或别名。
+NOTE_RE = re.compile(r"\s*备注[:：].*$")
 WORK_ALIAS_RE = re.compile(r"^作品别名[:：]\s*(.*)$")
 ALIAS_SPLIT = re.compile(r"[、,，/／]+")
 SEPARATORS = re.compile(r"[\s·・‧•∙⋅\-–—/／:：]+")
@@ -362,7 +364,7 @@ def parse_checklist(text: str) -> list[dict]:
         match = CHECK_RE.match(line)
         if not match:
             continue
-        rest = match.group("rest").strip()
+        rest = NOTE_RE.sub("", match.group("rest")).strip()
         link = LINK_RE.match(rest)
         if link:
             name = link.group("text").strip()
