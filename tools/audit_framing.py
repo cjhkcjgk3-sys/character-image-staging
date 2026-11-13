@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build a local review gallery for checked character images.
+"""Build local review galleries and high-contrast contact sheets.
 
 The gallery does not decide whether an image is acceptable. It makes it quick
-to visually scan every checked image and highlights a small alpha-edge
-heuristic as a review hint only.
+to scan every checked image. Contact sheets render transparent pixels against
+magenta so missing alpha regions are easier to notice when asking a vision
+model to pre-screen the collection. All visual warnings remain review hints.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 try:
-    from PIL import Image, ImageOps
+    from PIL import Image, ImageDraw, ImageOps
 except ImportError:
     sys.stderr.write("需要 Pillow：python -m pip install Pillow\n")
     raise SystemExit(2)
@@ -25,6 +26,11 @@ from check import parse_checklist, resolve_image
 
 
 THUMBNAIL_SIZE = (176, 232)
+CONTACT_COLUMNS = 6
+CONTACT_CELL_SIZE = (210, 280)
+CONTACT_LABEL_HEIGHT = 30
+CONTACT_IMAGE_HEIGHT = CONTACT_CELL_SIZE[1] - CONTACT_LABEL_HEIGHT
+CONTACT_MAGENTA = (255, 0, 255)
 TOP_BAND_FRACTION = 0.02
 TOP_BAND_OCCUPANCY_WARNING = 0.40
 ALPHA_VISIBLE_THRESHOLD = 32
@@ -68,6 +74,90 @@ def top_edge_warning(image: Image.Image) -> str | None:
 
 def safe_slug(index: int) -> str:
     return f"{index:04d}"
+
+
+def build_contact_sheets(records: list[dict], output_dir: Path, page_size: int) -> list[str]:
+    """Create numbered, AI-ready JPEG sheets and a TSV that maps IDs to files."""
+    contact_dir = output_dir / "contact-sheets"
+    contact_dir.mkdir(parents=True, exist_ok=True)
+    for stale in contact_dir.glob("contact-*.jpg"):
+        stale.unlink()
+
+    mapping_lines = ["序号\t名称\t图片路径\t复核提示"]
+    sheet_files: list[str] = []
+    cell_width, cell_height = CONTACT_CELL_SIZE
+    for start in range(0, len(records), page_size):
+        page_number = start // page_size + 1
+        sheet_name = f"contact-{page_number:03d}.jpg"
+        sheet_files.append(sheet_name)
+        batch = records[start:start + page_size]
+        row_count = max(1, (len(batch) + CONTACT_COLUMNS - 1) // CONTACT_COLUMNS)
+        sheet = Image.new(
+            "RGB",
+            (CONTACT_COLUMNS * cell_width, row_count * cell_height),
+            (238, 238, 238),
+        )
+        draw = ImageDraw.Draw(sheet)
+
+        for offset, record in enumerate(batch):
+            column = offset % CONTACT_COLUMNS
+            row = offset // CONTACT_COLUMNS
+            x = column * cell_width
+            y = row * cell_height
+            draw.rectangle((x + 2, y + 2, x + cell_width - 3, y + cell_height - 3), fill=(255, 255, 255))
+            draw.text((x + 7, y + 7), f"#{record['index']:04d}", fill=(20, 20, 20))
+
+            image_box = (
+                x + 4,
+                y + CONTACT_LABEL_HEIGHT,
+                x + cell_width - 4,
+                y + cell_height - 4,
+            )
+            draw.rectangle(image_box, fill=CONTACT_MAGENTA)
+            if record["thumbnail"]:
+                thumb_path = output_dir / record["thumbnail"]
+                try:
+                    with Image.open(thumb_path) as opened:
+                        thumb = opened.convert("RGBA")
+                    thumb.thumbnail((cell_width - 16, CONTACT_IMAGE_HEIGHT - 10), Image.Resampling.LANCZOS)
+                    background = Image.new("RGBA", thumb.size, (*CONTACT_MAGENTA, 255))
+                    background.alpha_composite(thumb)
+                    tx = x + (cell_width - thumb.width) // 2
+                    ty = y + CONTACT_LABEL_HEIGHT + (CONTACT_IMAGE_HEIGHT - thumb.height) // 2
+                    sheet.paste(background.convert("RGB"), (tx, ty))
+                except Exception:
+                    draw.rectangle(image_box, outline=(190, 0, 0), width=3)
+                    draw.text((x + 9, y + CONTACT_LABEL_HEIGHT + 8), "缩略图读取失败", fill=(150, 0, 0))
+            elif record["error"]:
+                draw.rectangle(image_box, outline=(190, 0, 0), width=3)
+                draw.text((x + 9, y + CONTACT_LABEL_HEIGHT + 8), "无有效图片", fill=(150, 0, 0))
+
+            if record["warning"]:
+                draw.rectangle((x + 1, y + 1, x + cell_width - 2, y + cell_height - 2), outline=(225, 135, 0), width=3)
+            elif record["error"]:
+                draw.rectangle((x + 1, y + 1, x + cell_width - 2, y + cell_height - 2), outline=(190, 0, 0), width=3)
+
+            note = record["error"] or record["warning"] or ""
+            mapping_lines.append(
+                f"{record['index']:04d}\t{record['name']}\t{record['relative_path'] or ''}\t{note}"
+            )
+
+        sheet.save(contact_dir / sheet_name, format="JPEG", quality=92, optimize=True)
+
+    (contact_dir / "mapping.tsv").write_text("\n".join(mapping_lines) + "\n", encoding="utf-8")
+    prompt = """请检查这些编号拼图中的角色图片，逐格查看，不要根据文件名猜图像内容。
+
+图片里的透明区域用亮洋红色显示。请重点标出：
+- 头部或脸部被透明矩形、直线切口、裁边或缺块遮掉；
+- 画面出现明显横向/纵向拖影、碎片拼接或大块缺失；
+- 只有场景、舞台、舰装、特效或 UI，没有可辨认的角色主体。
+
+透明背景、角色周围的自然留白、特效、头发和舰装之间的空隙不自动算问题。人物很小、画风抽象或判断不清时标为“需人工确认”，不要直接判坏。
+
+只返回有疑点的编号和简短理由，格式为：编号 | 类别（缺脸/裁切/碎片或拖影/无角色主体/需确认）| 依据。编号通过 mapping.tsv 对应中文名和原文件。请勿把候选提示当作最终结论。
+"""
+    (contact_dir / "review_prompt.txt").write_text(prompt, encoding="utf-8")
+    return sheet_files
 
 
 def build_gallery(work_dir: Path, output_dir: Path, page_size: int) -> dict:
@@ -124,6 +214,8 @@ def build_gallery(work_dir: Path, output_dir: Path, page_size: int) -> dict:
                 record["error"] = f"读取或完整解码失败：{type(exc).__name__}: {exc}"
         records.append(record)
 
+    contact_sheets = build_contact_sheets(records, output_dir, page_size)
+
     pages: list[str] = []
     for start in range(0, len(records), page_size):
         page_number = start // page_size + 1
@@ -143,6 +235,7 @@ def build_gallery(work_dir: Path, output_dir: Path, page_size: int) -> dict:
     summary = {
         "work": work_dir.name,
         "checked_images": len(records),
+        "contact_sheets": contact_sheets,
         "warning_count": len(warnings),
         "error_count": len(errors),
         "warnings": [
@@ -162,6 +255,10 @@ def build_gallery(work_dir: Path, output_dir: Path, page_size: int) -> dict:
         f'<li><a href="{filename}">第 {i} 页</a>（{min(page_size, len(records) - (i - 1) * page_size)} 张）</li>'
         for i, filename in enumerate(pages, 1)
     ) or "<li>清单中没有已勾选图片。</li>"
+    contact_sheet_links = "\n".join(
+        f'<li><a href="contact-sheets/{filename}">第 {i} 张拼图</a></li>'
+        for i, filename in enumerate(contact_sheets, 1)
+    ) or "<li>没有可生成的拼图。</li>"
     warning_list = "\n".join(
         f'<li>#{r["index"]} {html.escape(r["name"])}：{html.escape(r["warning"])}'
         f' — <a href="{pages[(r["index"] - 1) // page_size]}#image-{r["index"]}">定位</a></li>'
@@ -176,7 +273,11 @@ def build_gallery(work_dir: Path, output_dir: Path, page_size: int) -> dict:
         body=(
             f"<h1>{html.escape(work_dir.name)} 图片构图复核</h1>"
             f"<p>共检查清单中已勾选的 {len(records)} 张图。先按页扫缩略图；点击缩略图可打开原图。"
-            "边缘提示只用于定位复核，不会自动判错。</p>"
+            "透明图在联系表中以洋红色显示透明区域，便于模型预筛缺块；标签和边缘提示都不能自动判错。</p>"
+            f"<p>供视觉模型预筛的编号拼图位于 <code>contact-sheets/</code>，编号对应表为 "
+            f"<a href=\"contact-sheets/mapping.tsv\">mapping.tsv</a>；"
+            f"提问模板为 <a href=\"contact-sheets/review_prompt.txt\">review_prompt.txt</a>。</p>"
+            f"<details><summary>视觉模型拼图（{len(contact_sheets)} 张）</summary><ul>{contact_sheet_links}</ul></details>"
             f"<p>边缘提示 {len(warnings)} 项；读取错误 {len(errors)} 项。</p>"
             f"<h2>分批总览</h2><ul>{page_links}</ul>"
             f"<h2>边缘风险提示</h2><ul>{warning_list}</ul>"
@@ -274,11 +375,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     print(f"已生成：{output_dir / 'index.html'}")
+    print(f"视觉模型复核拼图：{output_dir / 'contact-sheets'}")
     print(
         f"已勾选图片 {summary['checked_images']} 张；"
         f"边缘提示 {summary['warning_count']} 项；读取错误 {summary['error_count']} 项。"
     )
-    print("浏览 index.html，逐页扫过所有缩略图；橙框只提示复核，不代表图片有错。")
+    print("可以把 contact-sheets 中的编号拼图交给视觉模型预筛，再用 mapping.tsv 找到原图；提示项仍需核对原图。")
     return 0
 
 
