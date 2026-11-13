@@ -2,7 +2,7 @@
 
 按作品整理角色图片，供「小说自动生成器」批量写卡时导入酒馆使用。本仓库只做收集和中转；酒馆侧的导入与送图尚未开发。
 
-> **仓库分工**：本仓库收原神、崩坏：星穹铁道、碧蓝航线、绝区零，以后只修图补图。其余作品请到 [character-image-staging-2](https://github.com/cjhkcjgk3-sys/character-image-staging-2) 收集。
+> **仓库分工**：本仓库放 原神、崩坏：星穹铁道、碧蓝航线、绝区零（已收完，只修图补图），以及待收集的 明日方舟、终末地、鸣潮、异环。其余作品在 [character-image-staging-2](https://github.com/cjhkcjgk3-sys/character-image-staging-2)。单个仓库接近 1 GB 时再开新仓库。
 
 ## 目录
 
