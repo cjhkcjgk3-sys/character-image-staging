@@ -18,6 +18,7 @@ import check as chk  # noqa: E402
 JPEG_HEADER = b"\xff\xd8\xff\xd9"
 PNG_HEADER = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
 WEBP_HEADER = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 8
+VALID_IMAGE_SIZE = 100_000
 
 
 def write_image(path: Path, header: bytes, size: int, complete: bool = True) -> None:
@@ -43,7 +44,7 @@ def write_checklist(work_dir: Path, body: str) -> None:
 class ParseTests(unittest.TestCase):
     def test_checked_link_and_trailing_note_ignored(self):
         items = chk.parse_checklist(
-            "# 标题\n\n- [x] [温迪](温迪.jpg)\n- [ ] [芙宁娜](芙宁娜.webp)（需换 500KB 以上的图）\n"
+            "# 标题\n\n- [x] [温迪](温迪.jpg)\n- [ ] [芙宁娜](芙宁娜.webp)（需换清晰的源图）\n"
         )
         self.assertEqual(len(items), 2)
         self.assertTrue(items[0]["checked"])
@@ -94,7 +95,7 @@ class CheckWorkTests(unittest.TestCase):
         self._temp.cleanup()
 
     def test_checked_valid_image_passes(self):
-        write_image(self.work / "温迪.jpg", JPEG_HEADER, chk.SIZE_MIN)
+        write_image(self.work / "温迪.jpg", JPEG_HEADER, VALID_IMAGE_SIZE)
         write_checklist(self.work, "- [x] [温迪](温迪.jpg)\n")
         errors, warnings, count = chk.check_work(self.work)
         self.assertEqual(errors, [])
@@ -106,25 +107,31 @@ class CheckWorkTests(unittest.TestCase):
         errors, _warnings, _count = chk.check_work(self.work)
         self.assertTrue(any("不存在" in error for error in errors))
 
-    def test_checked_undersized_file_fails(self):
-        write_image(self.work / "芙宁娜.webp", WEBP_HEADER, 487_808)
+    def test_small_file_passes_without_minimum_size(self):
+        write_image(self.work / "芙宁娜.webp", WEBP_HEADER, VALID_IMAGE_SIZE)
         write_checklist(self.work, "- [x] [芙宁娜](芙宁娜.webp)\n")
         errors, _warnings, _count = chk.check_work(self.work)
-        self.assertTrue(any("文件大小" in error for error in errors))
+        self.assertEqual(errors, [])
+
+    def test_file_at_one_megabyte_fails(self):
+        write_image(self.work / "温迪.jpg", JPEG_HEADER, chk.SIZE_MAX_EXCLUSIVE)
+        write_checklist(self.work, "- [x] [温迪](温迪.jpg)\n")
+        errors, _warnings, _count = chk.check_work(self.work)
+        self.assertTrue(any("必须小于" in error for error in errors))
 
     def test_truncated_images_fail(self):
-        write_image(self.work / "a.png", PNG_HEADER, chk.SIZE_MIN, complete=False)
-        webp = bytearray(WEBP_HEADER + b"\x00" * (chk.SIZE_MIN - len(WEBP_HEADER)))
-        webp[4:8] = (chk.SIZE_MIN + 1000).to_bytes(4, "little")
+        write_image(self.work / "a.png", PNG_HEADER, VALID_IMAGE_SIZE, complete=False)
+        webp = bytearray(WEBP_HEADER + b"\x00" * (VALID_IMAGE_SIZE - len(WEBP_HEADER)))
+        webp[4:8] = (VALID_IMAGE_SIZE + 1000).to_bytes(4, "little")
         (self.work / "b.webp").write_bytes(bytes(webp))
-        write_image(self.work / "c.jpg", JPEG_HEADER[:3], chk.SIZE_MIN, complete=False)
+        write_image(self.work / "c.jpg", JPEG_HEADER[:3], VALID_IMAGE_SIZE, complete=False)
         write_checklist(self.work, "- [x] [甲](a.png)\n- [x] [乙](b.webp)\n- [x] [丙](c.jpg)\n")
         errors, _warnings, _count = chk.check_work(self.work)
         self.assertEqual(sum("不完整" in error for error in errors), 3)
 
     def test_complete_png_and_webp_pass(self):
-        write_image(self.work / "a.png", PNG_HEADER, chk.SIZE_MIN)
-        write_image(self.work / "b.webp", WEBP_HEADER, chk.SIZE_MIN)
+        write_image(self.work / "a.png", PNG_HEADER, VALID_IMAGE_SIZE)
+        write_image(self.work / "b.webp", WEBP_HEADER, VALID_IMAGE_SIZE)
         write_checklist(self.work, "- [x] [甲](a.png)\n- [x] [乙](b.webp)\n")
         errors, _warnings, _count = chk.check_work(self.work)
         self.assertEqual(errors, [])
@@ -142,13 +149,13 @@ class CheckWorkTests(unittest.TestCase):
         self.assertTrue(any("越出" in error or "不合法" in error for error in errors))
 
     def test_magic_bytes_must_match_extension(self):
-        write_image(self.work / "温迪.jpg", WEBP_HEADER, chk.SIZE_MIN)
+        write_image(self.work / "温迪.jpg", WEBP_HEADER, VALID_IMAGE_SIZE)
         write_checklist(self.work, "- [x] [温迪](温迪.jpg)\n")
         errors, _warnings, _count = chk.check_work(self.work)
         self.assertTrue(any("文件头与扩展名不一致" in error for error in errors))
 
     def test_url_encoded_link_resolves(self):
-        write_image(self.work / "温迪.jpg", JPEG_HEADER, chk.SIZE_MIN)
+        write_image(self.work / "温迪.jpg", JPEG_HEADER, VALID_IMAGE_SIZE)
         encoded = quote("温迪.jpg", safe="")
         write_checklist(self.work, f"- [x] [温迪]({encoded})\n")
         errors, warnings, _count = chk.check_work(self.work)
@@ -156,8 +163,8 @@ class CheckWorkTests(unittest.TestCase):
         self.assertEqual(warnings, [])
 
     def test_orphan_image_is_warning(self):
-        write_image(self.work / "温迪.jpg", JPEG_HEADER, chk.SIZE_MIN)
-        write_image(self.work / "多余.png", PNG_HEADER, chk.SIZE_MIN)
+        write_image(self.work / "温迪.jpg", JPEG_HEADER, VALID_IMAGE_SIZE)
+        write_image(self.work / "多余.png", PNG_HEADER, VALID_IMAGE_SIZE)
         write_checklist(self.work, "- [x] [温迪](温迪.jpg)\n")
         errors, warnings, _count = chk.check_work(self.work)
         self.assertEqual(errors, [])
@@ -165,7 +172,7 @@ class CheckWorkTests(unittest.TestCase):
 
     def test_png_and_standalone_folder(self):
         pack = Path(self._temp.name) / "extracted" / "星穹铁道"
-        write_image(pack / "角色甲.png", PNG_HEADER, chk.SIZE_MIN)
+        write_image(pack / "角色甲.png", PNG_HEADER, VALID_IMAGE_SIZE)
         write_checklist(pack, "- [x] [角色甲](角色甲.png)\n")
         errors, warnings, _count = chk.check_work(pack)
         self.assertEqual(errors, [])
@@ -304,8 +311,8 @@ class AliasCollisionTests(unittest.TestCase):
         self._temp.cleanup()
 
     def test_alias_collision_is_warning(self):
-        write_image(self.work / "角色甲.jpg", JPEG_HEADER, chk.SIZE_MIN)
-        write_image(self.work / "角色乙.jpg", JPEG_HEADER, chk.SIZE_MIN)
+        write_image(self.work / "角色甲.jpg", JPEG_HEADER, VALID_IMAGE_SIZE)
+        write_image(self.work / "角色乙.jpg", JPEG_HEADER, VALID_IMAGE_SIZE)
         write_checklist(
             self.work,
             "- [x] [角色甲](角色甲.jpg) 别名：同名\n- [x] [角色乙](角色乙.jpg) 别名：同名\n",
@@ -449,7 +456,7 @@ class WorkAliasChecklistTests(unittest.TestCase):
         self._temp.cleanup()
 
     def test_checklist_work_alias_used_by_check_work_keys(self):
-        write_image(self.work / "姬子.jpg", JPEG_HEADER, chk.SIZE_MIN)
+        write_image(self.work / "姬子.jpg", JPEG_HEADER, VALID_IMAGE_SIZE)
         write_checklist(
             self.work,
             "作品别名：自定义简称\n\n- [x] [姬子](姬子.jpg)\n",
@@ -466,8 +473,8 @@ class WorkAliasChecklistTests(unittest.TestCase):
         self.assertEqual(entry["name"], "姬子")
 
     def test_versioned_entries_are_not_alias_collisions(self):
-        write_image(self.work / "三月七.jpg", JPEG_HEADER, chk.SIZE_MIN)
-        write_image(self.work / "三月七（巡猎）.jpg", JPEG_HEADER, chk.SIZE_MIN)
+        write_image(self.work / "三月七.jpg", JPEG_HEADER, VALID_IMAGE_SIZE)
+        write_image(self.work / "三月七（巡猎）.jpg", JPEG_HEADER, VALID_IMAGE_SIZE)
         write_checklist(
             self.work,
             "- [x] [三月七](三月七.jpg)\n- [x] [三月七（巡猎）](三月七（巡猎）.jpg)\n",

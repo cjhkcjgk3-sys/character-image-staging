@@ -14,8 +14,9 @@ if sys.version_info < (3, 9):
     sys.stderr.write("需要 Python 3.9 或更高版本。\n")
     raise SystemExit(2)
 
-SIZE_MIN = 500_000
-SIZE_MAX = 2_000_000
+# Repository images must stay below 1 MB. File size has no minimum: clarity is
+# checked from the decoded image itself, not inferred from its byte count.
+SIZE_MAX_EXCLUSIVE = 1_000_000
 CHECKLIST_NAME = "00-清单.md"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 MIME_EXTENSIONS = {
@@ -419,9 +420,9 @@ def inspect_checked(work_dir: Path, rel: str) -> list[str]:
     if mime is not None and not is_complete(resolved, mime):
         errors.append(f"图片文件不完整（可能下载被截断，打不开）：{rel}")
     size = resolved.stat().st_size
-    if not (SIZE_MIN <= size <= SIZE_MAX):
+    if size >= SIZE_MAX_EXCLUSIVE:
         errors.append(
-            f"文件大小为 {size} 字节，需要在 {SIZE_MIN} 与 {SIZE_MAX} 字节之间：{rel}"
+            f"文件大小为 {size} 字节，必须小于 {SIZE_MAX_EXCLUSIVE} 字节：{rel}"
         )
     return errors
 
