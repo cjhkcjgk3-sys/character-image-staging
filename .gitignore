@@ -2,5 +2,6 @@
 Thumbs.db
 __pycache__/
 *.pyc
+.image-audit/
 .env
 .env.*
