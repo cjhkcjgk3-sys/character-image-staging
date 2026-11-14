@@ -1,0 +1,32 @@
+name: Publish work ZIPs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "images/**"
+      - "tools/publish_work_zips.py"
+      - ".github/workflows/publish-zips.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-work-zips
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Build work ZIPs
+        run: python3 tools/publish_work_zips.py --out out/work-zips
+      - name: Publish to downloads release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/publish_work_zips.py --out out/work-zips --publish-only
