@@ -49,17 +49,16 @@ class MarginTests(unittest.TestCase):
         self.assertLessEqual(abs(left - right), 1)
         self.assertLessEqual(abs(top - bottom), 1)
 
-    def test_margin_clamps_to_image_and_does_not_pad_the_opposite_side(self):
-        # Body sits against the left and top edges.
+    def test_body_stays_centered_when_canvas_edges_limit_margin(self):
+        # Body touches the left and top edges; margins shrink rather than shifting it.
         body = (0, 0, 100, 200)
         crop = cc.add_margin_and_center(body, 400, 400, ratio=0.04)
-        self.assertEqual(crop[0], 0)
-        self.assertEqual(crop[1], 0)
-        # Right / bottom get a normal margin, but we do not invent extra padding
-        # on those sides just to "center" a body that is already on the edge.
-        mx, my = cc.margin_inset(100, 200, 0.04)
-        self.assertEqual(crop[2], 100 + mx)
-        self.assertEqual(crop[3], 200 + my)
+        self.assertLessEqual(crop[0], body[0])
+        self.assertLessEqual(crop[1], body[1])
+        self.assertGreaterEqual(crop[2], body[2])
+        self.assertGreaterEqual(crop[3], body[3])
+        self.assertEqual((body[0] + body[2]), (crop[0] + crop[2]))
+        self.assertEqual((body[1] + body[3]), (crop[1] + crop[3]))
 
     def test_crop_never_leaves_the_image_or_upscales(self):
         body = (10, 10, 90, 90)
@@ -189,7 +188,7 @@ class OpaqueAndApplyTests(unittest.TestCase):
             manual.save(manual_path, quality=90)
             before = manual_path.read_bytes()
 
-            rc = cc.main([str(auto_path), str(manual_path), "--apply", "--no-sheet", "--out", str(tmp_path / "out")])
+            rc = cc.main([str(auto_path), str(manual_path), "--apply", "--force-crop", "--no-sheet", "--out", str(tmp_path / "out")])
             self.assertEqual(rc, 0)
             # Manual file must be untouched.
             self.assertEqual(manual_path.read_bytes(), before)

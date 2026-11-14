@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""为角色立绘计算裁剪框（默认只读），需要时再就地裁剪并压缩。
+"""为角色立绘预览按需裁剪；只有需要时才裁剪，并压到文件大小上限内。
 
-默认只读：给每张图算一个建议裁剪框，写出品红底对照联系表和 JSON。
-加 --apply 时，只对 status=auto 的图就地裁剪，再按质量从 98 逐档压到
-小于 1,000,000 字节。status=manual 的图绝不会被自动改写。
+默认只读：计算裁剪建议，生成品红底对照联系表和 JSON。
+加 --apply 时，已低于 1 MB 的图片保持原样；小图超限时直接全画幅编码。
+高分辨率超限图先比较全画幅与安全裁剪后的质量，只在裁剪能提高质量时才裁。自动裁剪仍须人工查看联系表，确认人物完整且居中。可用 --force-crop 显式允许处理已合规的小图（仅限 status=auto）。
 
-处理顺序是先裁后压。人物本体必须完整保留：头（含头发、耳朵、头顶光环）、
-脸、躯干、手臂、手、腿、脚、服装、头发。伸出本体之外的武器和特效可以裁掉。
-裁框四周留约 3%–5% 的边距，人物居中。禁止放大。
+人物居中且人物本体完整是最高优先级：头（含头发、耳朵、头顶光环）、脸、躯干、手臂、手、腿、脚、服装、头发都必须保留。裁框围绕人物本体中心；边缘空间不足时缩小边距，不得让人物偏离中心或裁掉任何部位。伸出本体之外的武器和特效可以裁掉。禁止放大。
 
 依赖：Python 3.9+、Pillow、numpy。人脸检测和更快的形态学运算需要
 opencv-python-headless；没有 OpenCV 时仍可按透明外接框做保守裁剪，
@@ -41,6 +39,7 @@ except ImportError:  # pragma: no cover - depends on environment
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 MAX_EXCLUSIVE = 1_000_000
+SMALL_IMAGE_LONG_EDGE = 2000
 QUALITY_STEPS = (98, 97, 96, 95, 94, 92, 90, 88, 86, 84, 82, 80)
 # 边距占裁剪后画面的比例，落在 3%–5%。
 MARGIN_RATIO = 0.04
@@ -145,23 +144,36 @@ def add_margin_and_center(
     height: int,
     ratio: float = MARGIN_RATIO,
 ) -> Box:
-    """Expand ``body`` by ~3%–5% on each side so the body stays centered.
+    """Center ``body`` in the crop, reducing margins before ever clipping it.
 
-    If a side hits the image edge, the opposite side is not padded extra
-    (that would off-center the body and pull in more background / effects).
-    The result is clipped to the image and never larger than the original.
+    The body bbox is the highest-priority protected region. The crop stays
+    symmetric around its center when possible; if the image edge limits space,
+    margins shrink symmetrically rather than shifting the body off-center.
     """
     clipped = clip_box(body, width, height)
     if clipped is None:
         return 0, 0, width, height
     x0, y0, x1, y1 = clipped
-    bw, bh = x1 - x0, y1 - y0
-    mx, my = margin_inset(bw, bh, ratio)
-    # Equal margins first so the body is centered in the proposed crop.
-    crop = clip_box((x0 - mx, y0 - my, x1 + mx, y1 + my), width, height)
-    if crop is None:
-        return 0, 0, width, height
-    return crop
+    body_w, body_h = x1 - x0, y1 - y0
+    mx, my = margin_inset(body_w, body_h, ratio)
+
+    def centered_axis(start: int, end: int, canvas: int, desired: int) -> tuple[int, int]:
+        body_extent = end - start
+        center_twice = start + end
+        max_symmetric_extent = int(min(center_twice, 2 * canvas - center_twice))
+        extent = max(body_extent, min(desired, max_symmetric_extent))
+        # Match parity so the crop center exactly matches the body's center.
+        if extent % 2 != center_twice % 2:
+            if extent + 1 <= max_symmetric_extent:
+                extent += 1
+            elif extent - 1 >= body_extent:
+                extent -= 1
+        origin = (center_twice - extent) // 2
+        return origin, extent
+
+    crop_x, crop_w = centered_axis(x0, x1, width, body_w + 2 * mx)
+    crop_y, crop_h = centered_axis(y0, y1, height, body_h + 2 * my)
+    return crop_x, crop_y, crop_x + crop_w, crop_y + crop_h
 
 
 def face_safe_box(face: tuple[int, int, int, int], width: int, height: int, generous: bool = True) -> Box:
@@ -767,6 +779,13 @@ def compress_cropped(image: Image.Image, dest: Path, original_suffix: str) -> tu
     return out, size, used_q
 
 
+def estimate_full_frame_fit(image: Image.Image, original_suffix: str) -> tuple[int, int]:
+    """Return (bytes, quality) for high-quality encoding without changing the frame."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _, size, quality = compress_cropped(image, Path(tmp) / "full_frame", original_suffix)
+        return size, quality
+
+
 def apply_crop(image: Image.Image, box: Box, dest: Path, original_suffix: str) -> tuple[Path, int, int]:
     """Crop ``image`` to ``box`` (no upscale) and compress into ``dest``'s stem."""
     width, height = image.size
@@ -983,7 +1002,7 @@ def maybe_size_if_applied(image: Image.Image, rec: dict) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="为角色立绘计算先裁后压的裁剪框（默认只读，不改原图）。"
+        description="为角色立绘建议按需裁剪（默认只读；--apply优先全画幅编码，仅必要时裁剪）。"
     )
     parser.add_argument(
         "paths",
@@ -991,7 +1010,8 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="作品目录、images/<作品>，或若干图片文件",
     )
-    parser.add_argument("--apply", action="store_true", help="就地写入 auto 裁剪结果（manual 不会被改）")
+    parser.add_argument("--apply", action="store_true", help="处理超限图片；已合规图不改，小图全画幅编码，大图仅必要时裁")
+    parser.add_argument("--force-crop", action="store_true", help="经预览确认确需调整构图时，允许裁已合规图片或小图（仅 status=auto）")
     parser.add_argument(
         "--out",
         type=Path,
@@ -1021,24 +1041,64 @@ def main(argv: list[str] | None = None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     records: list[dict] = []
-    applied = skipped_manual = errors = 0
+    applied = skipped_under_limit = errors = 0
     for name, path in items:
         image = load_image(path)
         proposal = propose_crop(image, margin_ratio=margin)
         rec = record_from_proposal(name, path, proposal)
         rec["_original"] = image
         status = rec["status"]
-        if args.apply and status == "auto":
+        original_bytes = path.stat().st_size
+        long_edge = max(image.size)
+        should_force_crop = args.force_crop and status == "auto"
+
+        if args.apply and original_bytes < MAX_EXCLUSIVE and not should_force_crop:
+            # Already-compliant images stay untouched unless a crop was explicitly requested.
+            rec["applied"] = False
+            rec["apply_action"] = "skipped_under_limit"
+            rec["_cropped"] = image.copy()
+            skipped_under_limit += 1
+        elif args.apply:
             try:
+                use_crop = should_force_crop
+                full_frame_quality = None
+                if not use_crop and status == "auto" and long_edge > SMALL_IMAGE_LONG_EDGE:
+                    maybe_size_if_applied(image, rec)
+                    crop_quality = rec.get("quality")
+                    try:
+                        _, _, full_frame_quality = estimate_full_frame_fit(image, path.suffix)
+                        rec["full_frame_quality"] = full_frame_quality
+                    except ValueError:
+                        # Full-frame encoding cannot meet the limit; a safe crop may help.
+                        full_frame_quality = 0
+                    use_crop = (
+                        isinstance(crop_quality, (int, float))
+                        and full_frame_quality < 90
+                        and crop_quality > full_frame_quality
+                    )
+
                 dest_stem = path.with_suffix("")
-                out, size, quality = apply_crop(image, tuple(rec["box"]), dest_stem, path.suffix)
+                if use_crop:
+                    out, size, quality = apply_crop(image, tuple(rec["box"]), dest_stem, path.suffix)
+                    action = "cropped_and_compressed"
+                else:
+                    # Keep the original framing when cropping is unnecessary, unsafe, or
+                    # the image is small. Re-encode the full canvas only if it is oversized.
+                    out, size, quality = compress_cropped(image, dest_stem, path.suffix)
+                    action = "compressed_full_frame"
                 rec["cropped_bytes"] = size
                 rec["quality"] = quality
                 rec["applied"] = True
+                rec["apply_action"] = action
                 rec["applied_path"] = str(out)
-                rec["crop_size"] = [rec["box"][2] - rec["box"][0], rec["box"][3] - rec["box"][1]]
+                rec["crop_size"] = (
+                    [rec["box"][2] - rec["box"][0], rec["box"][3] - rec["box"][1]]
+                    if use_crop else [image.width, image.height]
+                )
                 rec["_cropped"] = load_image(out)
                 applied += 1
+                if quality < 90:
+                    sys.stderr.write(f"需要目视复核质量低于 90 的图片：{out}\n")
                 if out.resolve() != path.resolve() and path.exists():
                     # Format changed (e.g. PNG → WebP); leave the old file and warn.
                     sys.stderr.write(f"已写出 {out.name}，原文件 {path.name} 仍在，请更新清单链接后删除旧文件。\n")
@@ -1046,11 +1106,7 @@ def main(argv: list[str] | None = None) -> int:
                 rec["applied"] = False
                 rec["compress_error"] = str(exc)
                 errors += 1
-                sys.stderr.write(f"裁剪失败 {path}: {exc}\n")
-        elif args.apply and status == "manual":
-            rec["applied"] = False
-            skipped_manual += 1
-            maybe_size_if_applied(image, rec)
+                sys.stderr.write(f"图片处理失败 {path}: {exc}\n")
         else:
             maybe_size_if_applied(image, rec)
         records.append(rec)
@@ -1063,6 +1119,9 @@ def main(argv: list[str] | None = None) -> int:
         "manual": sum(1 for r in records if r["status"] == "manual"),
         "noop": sum(1 for r in records if r["status"] == "noop"),
         "applied": applied,
+        "cropped": sum(1 for r in records if r.get("apply_action") == "cropped_and_compressed"),
+        "full_frame_compressed": sum(1 for r in records if r.get("apply_action") == "compressed_full_frame"),
+        "skipped_under_limit": skipped_under_limit,
         "records": [
             {k: v for k, v in rec.items() if not k.startswith("_")}
             for rec in records
@@ -1077,7 +1136,8 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"共 {len(records)} 张：auto {payload['auto']}，manual {payload['manual']}，"
         f"noop {payload['noop']}"
-        + (f"，已应用 {applied}，跳过 manual {skipped_manual}，失败 {errors}" if args.apply else "")
+        + (f"，已处理 {applied}（裁剪 {payload['cropped']}，全画幅编码 {payload['full_frame_compressed']}），"
+           f"合规图跳过 {skipped_under_limit}，失败 {errors}" if args.apply else "")
     )
     print(f"JSON {json_path}")
     if sheets:
