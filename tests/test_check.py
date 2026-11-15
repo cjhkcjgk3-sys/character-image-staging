@@ -201,7 +201,7 @@ class CheckWorkTests(unittest.TestCase):
 class RepoSampleTests(unittest.TestCase):
     def test_genshin_work_folder_passes(self):
         work = ROOT / "images" / "原神"
-        if not (work / "00-清单.md").is_file():
+        if not chk.checklist_paths(work):
             self.skipTest("原神作品目录不在当前工作区")
         errors, _warnings, count = chk.check_work(work)
         self.assertEqual(errors, [])
