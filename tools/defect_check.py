@@ -47,7 +47,7 @@ except ImportError:  # pragma: no cover - depends on environment
     cv2 = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check import find_work_dirs, parse_checklist, repo_root, resolve_image  # noqa: E402
+from check import checklist_paths, find_work_dirs, parse_checklist, repo_root, resolve_image  # noqa: E402
 
 CASCADE_PATH = Path(__file__).resolve().parent / "data" / "lbpcascade_animeface.xml"
 
@@ -352,8 +352,8 @@ def _worker(task: tuple[str, str, str, str, bool]) -> dict:
 def collect_tasks(work_dirs: list[Path], use_face: bool) -> tuple[list[tuple], list[dict]]:
     tasks, missing = [], []
     for work_dir in work_dirs:
-        checklist = work_dir / "00-清单.md"
-        for item in parse_checklist(checklist.read_text(encoding="utf-8")):
+        items = (item for path in checklist_paths(work_dir) for item in parse_checklist(path.read_text(encoding="utf-8")))
+        for item in items:
             if not item["checked"] or not item["image_path"]:
                 continue
             path = resolve_image(work_dir, item["image_path"])
@@ -470,7 +470,7 @@ def resolve_works(names: list[str], root: Path) -> list[Path]:
         candidate = Path(name)
         if not candidate.is_dir():
             candidate = root / "images" / name
-        if not (candidate / "00-清单.md").is_file():
+        if not checklist_paths(candidate):
             raise SystemExit(f"找不到作品：{name}")
         chosen.append(candidate.resolve())
     return chosen

@@ -17,7 +17,9 @@ if sys.version_info < (3, 9):
 # Repository images must stay below 1 MB. File size has no minimum: clarity is
 # checked from the decoded image itself, not inferred from its byte count.
 SIZE_MAX_EXCLUSIVE = 1_000_000
-CHECKLIST_NAME = "00-清单.md"
+CHECKLIST_NAME = "00-角色清单.md"
+LEGACY_CHECKLIST_NAME = "00-清单.md"
+SKIN_CHECKLIST_NAME = "01-皮肤清单.md"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 MIME_EXTENSIONS = {
     "image/png": {".png"},
@@ -380,6 +382,15 @@ def inspect_checked(work_dir: Path, rel: str) -> list[str]:
     return errors
 
 
+def checklist_paths(work_dir: Path) -> list[Path]:
+    role = work_dir / CHECKLIST_NAME
+    if role.is_file():
+        skin = work_dir / SKIN_CHECKLIST_NAME
+        return [role, skin] if skin.is_file() else [role]
+    legacy = work_dir / LEGACY_CHECKLIST_NAME
+    return [legacy] if legacy.is_file() else []
+
+
 def find_work_dirs(root: Path) -> list[Path]:
     images = root / "images"
     if not images.is_dir():
@@ -387,17 +398,17 @@ def find_work_dirs(root: Path) -> list[Path]:
     return [
         child
         for child in sorted(images.iterdir(), key=lambda path: path.name)
-        if child.is_dir() and (child / CHECKLIST_NAME).is_file()
+        if child.is_dir() and checklist_paths(child)
     ]
 
 
 def check_work(work_dir: Path) -> tuple[list[str], list[str], int]:
     work_dir = work_dir.resolve()
-    checklist = work_dir / CHECKLIST_NAME
-    if not checklist.is_file():
-        return [f"找不到 {CHECKLIST_NAME}：{checklist}"], [], 0
-    text = checklist.read_text(encoding="utf-8")
-    items = parse_checklist(text)
+    paths = checklist_paths(work_dir)
+    if not paths:
+        return [f"找不到 {CHECKLIST_NAME}：{work_dir}"], [], 0
+    text = paths[0].read_text(encoding="utf-8")
+    items = [item for path in paths for item in parse_checklist(path.read_text(encoding="utf-8"))]
     work_aliases = parse_work_aliases(text)
     errors: list[str] = []
     warnings: list[str] = []
@@ -451,7 +462,7 @@ def report_work(work_dir: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="检查作品目录中的 00-清单.md 与图片")
+    parser = argparse.ArgumentParser(description="检查作品目录中的角色、皮肤清单与图片")
     parser.add_argument(
         "work_dir",
         nargs="?",
@@ -467,7 +478,7 @@ def main(argv: list[str] | None = None) -> int:
 
     works = find_work_dirs(repo_root())
     if not works:
-        print("未在 images/ 下找到含 00-清单.md 的作品目录。", file=sys.stderr)
+        print("未在 images/ 下找到含角色清单的作品目录。", file=sys.stderr)
         return 1
     exit_code = 0
     for work_dir in works:

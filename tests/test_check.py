@@ -508,5 +508,17 @@ class WorkAliasChecklistTests(unittest.TestCase):
 
 
 
+class SeparateManifestTests(unittest.TestCase):
+    def test_reads_skin_entries_and_ignores_group_headings_and_legacy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp) / "作品"
+            work.mkdir()
+            (work / "00-角色清单.md").write_text("# 作品角色图片清单\n- [ ] 安比\n", encoding="utf-8")
+            (work / "01-皮肤清单.md").write_text("# 皮肤\n## 安比\n- [ ] 安比（泳装）\n", encoding="utf-8")
+            (work / "00-清单.md").write_text("- [ ] 旧条目\n", encoding="utf-8")
+            errors, warnings, count = chk.check_work(work)
+            self.assertEqual((errors, warnings, count), ([], [], 2))
+
+
 if __name__ == "__main__":
     unittest.main()

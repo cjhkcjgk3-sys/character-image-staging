@@ -151,5 +151,24 @@ class BuildAllAndNotesTests(unittest.TestCase):
             self.assertIn("原神（genshin.zip）", text)
 
 
+class SeparateManifestZipTests(unittest.TestCase):
+    def test_includes_both_new_manifests_and_excludes_legacy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            work = root / "作品"
+            write_checklist(work, "- [ ] 旧条目\n")
+            (work / "00-角色清单.md").write_text("- [ ] 角色\n", encoding="utf-8")
+            (work / "01-皮肤清单.md").write_text("## 角色\n- [ ] 角色（泳装）\n", encoding="utf-8")
+            write_image(work / "角色.webp")
+            dest = root / "work.zip"
+            pub.build_zip(work, dest)
+            with zipfile.ZipFile(dest) as zf:
+                self.assertEqual(zf.namelist(), ["作品/00-角色清单.md", "作品/01-皮肤清单.md", "作品/角色.webp"])
+
+    def test_five_added_works_have_distinct_english_names(self):
+        names = [pub.asset_name(name, ascii_names=True) for name in ["无期迷途", "深空之眼", "第七史诗", "交错战线", "棕色尘埃2"]]
+        self.assertEqual(len(set(names)), len(names))
+
+
 if __name__ == "__main__":
     unittest.main()

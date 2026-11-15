@@ -3,7 +3,8 @@
 
 The ZIP layout is:
 
-    <作品名>/00-清单.md
+    <作品名>/00-角色清单.md
+    <作品名>/01-皮肤清单.md（如有）
     <作品名>/<角色名>.png
 
 so the Novel-Auto-Generator plugin can import it and use「从清单添加到名单」.
@@ -24,7 +25,9 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
-MANIFEST_NAME = "00-清单.md"
+MANIFEST_NAME = "00-角色清单.md"
+SKIN_MANIFEST_NAME = "01-皮肤清单.md"
+LEGACY_MANIFEST_NAME = "00-清单.md"
 RELEASE_TAG = "downloads"
 RELEASE_TITLE = "图片下载"
 SINGAPORE = ZoneInfo("Asia/Singapore")
@@ -55,6 +58,11 @@ ASSET_SLUGS = {
     "重返未来1999": "reverse-1999",
     "阴阳师": "onmyoji",
     "碧蓝航线": "azur-lane",
+    "无期迷途": "path-to-nowhere",
+    "深空之眼": "aether-gazer",
+    "第七史诗": "epic-seven",
+    "交错战线": "cross-core",
+    "棕色尘埃2": "brown-dust-2",
 }
 
 
@@ -103,13 +111,17 @@ def build_zip(work_dir: Path, dest: Path) -> dict:
         raise ValueError(f"{work_dir} 里没有图片")
     manifest = work_dir / MANIFEST_NAME
     if not manifest.is_file():
+        manifest = work_dir / LEGACY_MANIFEST_NAME
+    if not manifest.is_file():
         raise FileNotFoundError(f"{work_dir} 有图片但缺少 {MANIFEST_NAME}")
+    skin = work_dir / SKIN_MANIFEST_NAME
+    manifests = [manifest, skin] if manifest.name == MANIFEST_NAME and skin.is_file() else [manifest]
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".partial")
     folder = work_dir.name
     with zipfile.ZipFile(tmp, "w") as zf:
-        for path in [manifest, *images]:
+        for path in [*manifests, *images]:
             zf.writestr(_zipinfo(path, f"{folder}/{path.name}"), path.read_bytes())
     tmp.replace(dest)
     return {
@@ -236,6 +248,9 @@ def build_all(images_dir: Path, out_dir: Path, ascii_names: bool) -> list[dict]:
     if not works:
         raise SystemExit(f"{images_dir} 下没有已收集图片的作品")
 
+    names = [asset_name(work.name, ascii_names=ascii_names) for work in works]
+    if len(names) != len(set(names)):
+        raise ValueError("多个作品的 ZIP 文件名相同，请为作品登记不同的英文名")
     summaries = []
     for work in works:
         dest = out_dir / asset_name(work.name, ascii_names=ascii_names)
@@ -274,7 +289,7 @@ def main(argv: list[str] | None = None) -> int:
                     "work": folder,
                     "path": path,
                     "name": path.name,
-                    "images": max(0, len(names) - 1),
+                    "images": sum(Path(name).suffix.lower() in IMAGE_SUFFIXES for name in names),
                     "bytes": path.stat().st_size,
                 }
             )

@@ -22,7 +22,7 @@ except ImportError:
     sys.stderr.write("需要 Pillow：python -m pip install Pillow\n")
     raise SystemExit(2)
 
-from check import parse_checklist, resolve_image
+from check import checklist_paths, parse_checklist, resolve_image
 
 
 THUMBNAIL_SIZE = (176, 232)
@@ -161,11 +161,11 @@ def build_contact_sheets(records: list[dict], output_dir: Path, page_size: int) 
 
 
 def build_gallery(work_dir: Path, output_dir: Path, page_size: int) -> dict:
-    checklist = work_dir / "00-清单.md"
-    if not checklist.is_file():
-        raise FileNotFoundError(f"找不到清单：{checklist}")
+    paths = checklist_paths(work_dir)
+    if not paths:
+        raise FileNotFoundError(f"找不到清单：{work_dir}")
 
-    rows = [item for item in parse_checklist(checklist.read_text(encoding="utf-8"))
+    rows = [item for path in paths for item in parse_checklist(path.read_text(encoding="utf-8"))
             if item["checked"]]
     output_dir.mkdir(parents=True, exist_ok=True)
     thumb_dir = output_dir / "thumbs"
