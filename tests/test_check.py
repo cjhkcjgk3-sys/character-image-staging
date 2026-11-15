@@ -287,15 +287,23 @@ class MatchNameTests(unittest.TestCase):
             self.assertEqual(status, "match", query)
             self.assertEqual(entry["name"], "雷电将军")
 
-    def test_unique_contains_match(self):
+    def test_partial_name_does_not_match(self):
+        # 与生成器一致：不做包含匹配，短查询不会命中更长的名字
         entry, status = chk.match_name("雷电", self.entries, "原神")
-        self.assertEqual(status, "match")
-        self.assertEqual(entry["name"], "雷电将军")
+        self.assertIsNone(entry)
+        self.assertEqual(status, "none")
 
-    def test_ambiguous_contains_match(self):
+    def test_partial_prefix_is_not_ambiguous(self):
         entry, status = chk.match_name("芙", self.entries, "原神")
         self.assertIsNone(entry)
-        self.assertEqual(status, "ambiguous")
+        self.assertEqual(status, "none")
+
+    def test_contained_query_does_not_match(self):
+        # 小安比 不配 安比（生成器 1.14.0 起的规则）
+        entries = [{"name": "安比", "aliases": [], "image_path": "安比.jpg"}]
+        entry, status = chk.match_name("小安比", entries, "绝区零")
+        self.assertIsNone(entry)
+        self.assertEqual(status, "none")
 
     def test_no_match(self):
         entry, status = chk.match_name("散兵", self.entries, "原神")
@@ -407,25 +415,27 @@ class VersionAndWorkAliasTests(unittest.TestCase):
         self.assertEqual(status, "match")
         self.assertEqual(entry["name"], "三月七（巡猎）")
 
-    def test_query_reordered_variant(self):
+    def test_reordered_variant_does_not_match(self):
+        # 备注顺序不对就不是同一个 key（生成器同样不认）
         entry, status = self._match("巡猎三月七")
-        self.assertEqual(status, "match")
-        self.assertEqual(entry["name"], "三月七（巡猎）")
+        self.assertIsNone(entry)
+        self.assertEqual(status, "none")
 
-    def test_only_variant_contains_match_if_unique(self):
+    def test_base_name_does_not_match_variant(self):
+        # 只有形态图时不拿本体名去顶替
         entries = [self.entries[2]]
         entry, status = self._match("三月七", entries)
-        self.assertEqual(status, "match")
-        self.assertEqual(entry["name"], "三月七（巡猎）")
+        self.assertIsNone(entry)
+        self.assertEqual(status, "none")
 
-    def test_base_name_ambiguous_when_two_variants_only(self):
+    def test_base_name_never_matches_variants(self):
         entries = [
             {"name": "三月七（巡猎）", "aliases": [], "image_path": "三月七（巡猎）.jpg"},
             {"name": "三月七（同谐）", "aliases": [], "image_path": "三月七（同谐）.jpg"},
         ]
         entry, status = self._match("三月七", entries)
         self.assertIsNone(entry)
-        self.assertEqual(status, "ambiguous")
+        self.assertEqual(status, "none")
 
     def test_honkai3_aliases(self):
         self.assertEqual(

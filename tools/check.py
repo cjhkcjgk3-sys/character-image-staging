@@ -257,47 +257,6 @@ def entry_keys(
     return keys
 
 
-def _identity_sets(
-    entry: dict,
-    work: str | None,
-    work_aliases: list[str] | None,
-) -> list[list[str]]:
-    sources = [entry.get("name") or ""]
-    sources.extend(entry.get("aliases") or [])
-    path = entry.get("image_path")
-    if path:
-        sources.append(Path(path).stem)
-    identities = []
-    for source in sources:
-        core, versions = name_identity(source, work, work_aliases)
-        tokens = [token for token in [core, *versions] if token]
-        if tokens:
-            identities.append(tokens)
-    return identities
-
-
-def _coverage(
-    needle: str,
-    entry: dict,
-    work: str | None,
-    work_aliases: list[str] | None,
-) -> int:
-    """How much of the query this entry explains. 0 means no loose match."""
-    scores = []
-    for tokens in _identity_sets(entry, work, work_aliases):
-        if all(token in needle for token in tokens):
-            # The query contains this entry's core name and any version tags.
-            scores.append(sum(len(token) for token in tokens))
-    for key in entry_keys(entry, work, work_aliases):
-        if key in needle:
-            scores.append(len(key))
-        elif needle in key:
-            # A short query contained by several names should stay ambiguous,
-            # so every such hit gets the same score (the query length).
-            scores.append(len(needle))
-    return max(scores) if scores else 0
-
-
 def match_name(
     query: str,
     entries: list[dict],
@@ -307,7 +266,10 @@ def match_name(
     """Match a roster query to one checklist entry.
 
     Returns (entry, "match") on a unique hit, or (None, "none" / "ambiguous").
-    Exact key matches win over contains / token coverage.
+
+    Exact-key only, mirroring the generator (novel-auto-generator 的
+    src/novel/roleName.js)：全／半角、括号、分隔符和已知作品名前缀会被折掉，
+    但只是"查询是名字的一部分"不算匹配（`小安比` 永远不会配 `安比`）。
     """
     needle = normalize_name(query, work, work_aliases)
     if not needle:
@@ -317,18 +279,7 @@ def match_name(
         return exact[0], "match"
     if len(exact) > 1:
         return None, "ambiguous"
-    scored: list[tuple[dict, int]] = []
-    for entry in entries:
-        score = _coverage(needle, entry, work, work_aliases)
-        if score:
-            scored.append((entry, score))
-    if not scored:
-        return None, "none"
-    best = max(item[1] for item in scored)
-    winners = [entry for entry, score in scored if score == best]
-    if len(winners) == 1:
-        return winners[0], "match"
-    return None, "ambiguous"
+    return None, "none"
 
 
 def parse_aliases(text: str) -> list[str]:
