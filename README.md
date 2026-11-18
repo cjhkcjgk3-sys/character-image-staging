@@ -4,7 +4,7 @@
 
 按作品整理角色图片，供「小说自动生成器」批量写卡时导入酒馆使用。本仓库只做收集和中转，图片导入与送图由小说自动生成器完成（见「在小说生成器里使用」）。
 
-> **仓库分工**：本仓库放 原神、崩坏：星穹铁道、绝区零、明日方舟、终末地、鸣潮、异环。碧蓝航线（本体与皮肤）在 [character-image-staging-azurlane](https://github.com/cjhkcjgk3-sys/character-image-staging-azurlane)；其余作品在 [character-image-staging-2](https://github.com/cjhkcjgk3-sys/character-image-staging-2)。单个仓库接近 1 GB 时再开新仓库。
+> **仓库分工**：本仓库放 原神、崩坏：星穹铁道、绝区零、明日方舟、终末地、鸣潮、异环、交错战线、第七史诗、棕色尘埃2（交错战线、第七史诗、棕色尘埃2 原应放在 2 号仓库，Gemini 放错到 1 号仓库，用户已同意保留在 1 号仓库）。碧蓝航线（本体与皮肤）在 [character-image-staging-azurlane](https://github.com/cjhkcjgk3-sys/character-image-staging-azurlane)；其余作品在 [character-image-staging-2](https://github.com/cjhkcjgk3-sys/character-image-staging-2)。单个仓库接近 1 GB 时再开新仓库。
 
 ## 目录
 
